@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "hybrid-algorithm-scratch"
+version = "0.1.0"
+description = ""
+authors = ["Thayer Anderson <tanderson11@gmail.com>"]
+readme = "README.md"
+packages = [{include = "hybrid_algorithm_scratch"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+numpy = "^1.25.2"
+jupyter = "^1.0.0"
+scipy = "^1.11.1"
+matplotlib = "^3.7.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
