@@ -166,7 +166,7 @@ def hybrid_step(
     if event_index == 0:
         event_flag = True
 
-    # drop expanded term for some of rates
+    # drop expanded term for sum of rates
     y = y[:-1]
     # round
     y = round_with_method(y, simulation_options.round_randomly, rng)
@@ -205,7 +205,7 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev)
 
-def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k_of_t: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, events=[], simulation_options=SimulationOptions()) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k_of_t: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], simulation_options=SimulationOptions()) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
@@ -215,7 +215,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
         k_of_t (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or a list of unchanging rate constants
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j
         rate_involvement_matrix (np.ndarray): A_ij = kinetic order for species i in reaction j.
-        rng (np.random.Generator)
+        rng (np.random.Generator): rng to use for waiting time (and rounding if rounding is random)
+        discontinuities (list[float], optional): a list of time points where k_of_t is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
         simulation_options (SimulationOptions): configuration of the simulation. Defaults to SimulationOptions().
 
@@ -226,7 +227,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             result.n_stochastic: number of stochastic events that occured,
             result.nfev: number of evaluations of the derivative.
 
-    """    
+    """   
+    discontinuities = np.array(discontinuities) 
     n_stochastic = 0
     nfev = 0
     t0, t_end = t_span
@@ -234,8 +236,15 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
     y = y0
     while t < t_end:
         propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
+        future_discontinuities = np.argwhere(discontinuities > t)
+        if future_discontinuities.any():
+            # the maximum double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
+            upper_limit = discontinuities[future_discontinuities[0]] - np.finfo(np.double).spacing
+        else:
+            upper_limit = t_end
         partition = partition_function(propensities)
-        step_update = hybrid_step(y, [t, t_end], partition, k_of_t, N, rate_involvement_matrix, rng, events, simulation_options)
+
+        step_update = hybrid_step(y, [t, upper_limit], partition, k_of_t, N, rate_involvement_matrix, rng, events, simulation_options)
         t = step_update.t
         y = step_update.y
         if step_update.status == StepStatus.stochastic_event:

@@ -1362,6 +1362,17 @@ files = [
 ]
 
 [[package]]
+name = "matlabengine"
+version = "9.14.3"
+description = "A module to call MATLAB from Python"
+category = "main"
+optional = false
+python-versions = ">=3.8, <3.11"
+files = [
+    {file = "matlabengine-9.14.3.tar.gz", hash = "sha256:8778ec2a22d64f7415ecb8d8a9f52642a69acb3ed4cdf6d774d157f049133ca5"},
+]
+
+[[package]]
 name = "matplotlib"
 version = "3.7.2"
 description = "Python plotting package"
@@ -2669,5 +2680,5 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 
 [metadata]
 lock-version = "2.0"
-python-versions = ">=3.9,<3.13"
-content-hash = "8a36c0899ac2bb932014daa3cd606846ee7bb69af4b0d7ebf06bf3492e819fe0"
+python-versions = ">=3.9,<3.11"
+content-hash = "41668a99125eb90354f472882f9a22f90e7df5699fc4391abd8ab0551cbb74bf"
