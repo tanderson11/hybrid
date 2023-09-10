@@ -18,6 +18,8 @@ class SimulationResult():
     y: np.ndarray
     n_stochastic: int
     nfev: int
+    t_history: np.ndarray
+    y_history: np.ndarray
 
 @dataclass(frozen=True)
 class Partition():
@@ -67,6 +69,8 @@ class StepUpdate(NamedTuple):
     y: np.ndarray
     status: StepStatus
     nfev: int
+    t_history: np.ndarray
+    y_history: np.ndarray
 
 def canonicalize_event(t_events, y_events):
     event_index = None
@@ -125,7 +129,6 @@ def hybrid_step(
             update.nfev: number of evaluations of derivative.
     """    
     event_flag = False
-    t0, t_max = t_span
 
     # not really a hitting *time* as this is a dimensionless quantity,
     # a random number drawn from the unit exponential distribution.
@@ -144,17 +147,17 @@ def hybrid_step(
     y0_expanded = np.zeros(len(y0)+1)
     y0_expanded[:-1] = y0
     step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k_of_t, N, rate_involvement_matrix, partition, hitting_point))
+    
+    # remove the integral of the rates, which is slotted into the last entry of y
+    y_all = step_solved.y[:-1,:]
+    y_last = y_all[:,-1]
 
     # if no event occurred, simply return the current values of t and y
     if step_solved.status == -1:
         assert False, "integration step failed"
     elif step_solved.status == 0:
-        print("Reached upper limit of integration")
-        y_last = step_solved.y[:,-1]
-        # drop last entry: it is the rate integral
-        y_last = y_last[:-1]
         y_last = round_with_method(y_last, simulation_options.round_randomly, rng)
-        return StepUpdate(step_solved.t[-1], y_last, StepStatus.upper_limit, step_solved.nfev)
+        return StepUpdate(step_solved.t[-1], y_last, StepStatus.upper_limit, step_solved.nfev, step_solved.t, y_all)
     
     #print("t_events:", step_solved.t_events)
     # if we reach here, an event has occured
@@ -174,7 +177,7 @@ def hybrid_step(
     # if the event isn't a stochastic event, then we were halting to reassess partition
     # so: move to the update but don't adjudicate any events
     if not event_flag:
-        return StepUpdate(t,y,StepStatus.other_terminal_event, step_solved.nfev)
+        return StepUpdate(t, y, StepStatus.other_terminal_event, step_solved.nfev, step_solved.t, y_all)
 
     # if the event was a stochastic event, cause it to happen
     # first by determining which event happened
@@ -203,7 +206,7 @@ def hybrid_step(
     y += update
     #print("stochastic event index", path_index, "update", update)
     #print(y)
-    return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev)
+    return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
 def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k_of_t: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], simulation_options=SimulationOptions()) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
@@ -228,27 +231,60 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             result.nfev: number of evaluations of the derivative.
 
     """   
-    discontinuities = np.array(discontinuities) 
+    discontinuities = np.sort(np.array(discontinuities))
+    # ignore a discontinuity at 0
+    if discontinuities[0] == 0:
+        discontinuities = discontinuities[1:]
     n_stochastic = 0
     nfev = 0
     t0, t_end = t_span
     t = t0
     y = y0
+
+    history_length = int(1e6)
+    t_history = np.zeros(history_length)
+    y_history = np.zeros((len(y), history_length))
+    history_index = 0
+    
+    next_discontinuity_index = 0
+    discontinuity_surgery_flag = False
     while t < t_end:
+        if discontinuity_surgery_flag and t < discontinuities[next_discontinuity_index-1]:
+            discontinuity_surgery_flag = False
+            print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
+            t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
         propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
-        next_discontinuity_index = np.searchsorted(discontinuities, t)
         # if we've passed all the discontinuities, next_discontinuity_index > len(discontinuities)
-        if next_discontinuity_index <= len(discontinuities):
-            # the maximum double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
-            upper_limit = discontinuities[next_discontinuity_index] - np.finfo(np.double).spacing
+        if next_discontinuity_index < len(discontinuities):
+            # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
+            upper_limit = discontinuities[next_discontinuity_index] - 1e-10
+            if upper_limit == discontinuities[next_discontinuity_index]:
+                import pdb; pdb.set_trace()
         else:
             upper_limit = t_end
         partition = partition_function(propensities)
+
+        _y_expanded = np.zeros(len(y)+1)
+        _y_expanded[:-1] = y
+        #print("propensities:", propensities)
+        #print("dydt:", dydt(t, _y_expanded, k_of_t, N, rate_involvement_matrix, partition, 0))
 
         step_update = hybrid_step(y, [t, upper_limit], partition, k_of_t, N, rate_involvement_matrix, rng, events, simulation_options)
         t = step_update.t
         y = step_update.y
         if step_update.status == StepStatus.stochastic_event:
             n_stochastic += 1
+        elif step_update.status == StepStatus.upper_limit:
+            discontinuity_surgery_flag = True
+            next_discontinuity_index += 1
         nfev += step_update.nfev
-    return SimulationResult(t,y,n_stochastic,nfev)
+        
+        n_samples = len(step_update.t_history)
+        t_history[history_index:history_index+n_samples] = step_update.t_history
+        y_history[:, history_index:history_index+n_samples] = step_update.y_history
+        history_index += n_samples
+    
+    # truncate histories
+    t_history = t_history[:history_index]
+    y_history = y_history[:, :history_index]
+    return SimulationResult(t,y,n_stochastic,nfev,t_history,y_history)

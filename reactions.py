@@ -9,7 +9,10 @@ class Species():
         self.abbreviation = abbreviation
     
     def __hash__(self) -> int:
-        return hash(self.name)
+        return hash((self.name, self.abbreviation))
+    
+    def __repr__(self) -> str:
+        return f"Species(name={self.name}, abbreviation={self.abbreviation})"
 
 class MultiplicityType(Enum):
     reacants = 'reactants'
@@ -73,6 +76,9 @@ class Reaction():
     def rate_involvement(self):
         return self.multiplicities(MultiplicityType.rate_involvement)
 
+    def __repr__(self) -> str:
+        return f"Reaction(description={self.description}, reactants={self.reactant_data}, products={self.product_data}, rate_involvement={self.rate_involvement}, k={self.k})"
+
 class RateConstantCluster(NamedTuple):
     k: function
     slice_bottom: int
@@ -98,20 +104,22 @@ class Model():
         self.base_k = np.zeros(self.n_reactions)
         self.k_of_ts = []
         i = 0
-        for r in self.reactions:
+        # reactions not self.reactions so we see families
+        for r in reactions:
             if isinstance(r, Reaction):
                 if isinstance(r.k, float):
                     self.base_k[i] = r.k
-                assert(isinstance(r.k, function), "a reaction's rate constant should be a float or function with signature k(t) --> float")
-                self.k_of_ts.append(RateConstantCluster(r.k, i, i+1))
+                else:
+                    assert(isinstance(r.k, function)), f"a reaction's rate constant should be a float or function with signature k(t) --> float: {r.k}"
+                    self.k_of_ts.append(RateConstantCluster(r.k, i, i+1))
                 i+=1
                 continue
             # reaction rate family
             self.k_of_ts.append(RateConstantCluster(r.k, i, i+len(r.reactions)+1))
             i += len(r.reactions)
 
-        self.species_indices = {s:i for i,s in enumerate(self.species)}
-        self.reaction_indices = {r:i for i,r in enumerate(self.reactions)}
+        self.species_index = {s:i for i,s in enumerate(self.species)}
+        self.reaction_index = {r:i for i,r in enumerate(self.reactions)}
 
     def multiplicity_matrix(self, mult_type):
         matrix = np.zeros((self.n_species, self.n_reactions))
@@ -119,7 +127,7 @@ class Model():
             multiplicity_column = np.zeros(self.n_species)
             reaction_info = reaction.multiplicities(mult_type)
             for species, multiplicity in reaction_info.items():
-                multiplicity_column[self.species_indices[species]] = multiplicity
+                multiplicity_column[self.species_index[species]] = multiplicity
             
             matrix[:,column] = multiplicity_column
         
@@ -144,34 +152,41 @@ class Model():
             return " " * int(np.ceil(missing_length/2)) + string + " " * int(np.floor(missing_length/2))
         return " " * int(np.floor(missing_length/2)) + string + " " * int(np.ceil(missing_length/2))
 
-    def pretty_side(self, reaction, side, absentee_value):
+    def pretty_side(self, reaction, side, absentee_value, skip_blanks=False):
+        padded_length = 4
+        reactant_multiplicities = reaction.multiplicities(side)
+        if len(reactant_multiplicities.keys()) == 0:
+            return self.pad_equally_until("0", padded_length)
+
         prior_species_flag = False
         pretty_side = ""
-        reactant_multiplicities = reaction.multiplicities(side)
         for i,s in enumerate(self.species):
             mult = reactant_multiplicities.get(s, absentee_value)
+            if mult is None:
+                species_piece = '' if i==0 or skip_blanks else ' '*2
+                pretty_side += species_piece
+                if not skip_blanks:
+                    pretty_side += " " * padded_length
+                prior_species_flag = False
+                continue
             if i == 0:
                 species_piece = ''
             else:
-                species_piece = ' +' if prior_species_flag else '  '
-            if mult is None:
-                pretty_side += species_piece + " " * 5
-                prior_species_flag = False
-                continue
+                species_piece = ' +' if prior_species_flag else ' '*2
             prior_species_flag = True           
-            species_piece += self.pad_equally_until(f"{str(int(mult)) if mult < 10 else '>9':.2}{s.abbreviation:.2}", 5)
+            species_piece += self.pad_equally_until(f"{str(int(mult)) if mult < 10 else '>9':.2}{s.abbreviation:.2}", padded_length)
             #print(f"piece: |{species_piece}|")
             pretty_side += species_piece
         return pretty_side
 
-    def pretty(self, hide_absent=True) -> str:
+    def pretty(self, hide_absent=True, skip_blanks=False) -> str:
         absentee_value = None if hide_absent else 0
         pretty = ""
         for reaction in self.reactions:
             pretty_reaction = f"{reaction.description:.22}" + " " * max(0, 22-len(reaction.description)) + ":"
-            pretty_reaction += self.pretty_side(reaction, MultiplicityType.reacants, absentee_value)
+            pretty_reaction += self.pretty_side(reaction, MultiplicityType.reacants, absentee_value, skip_blanks)
             pretty_reaction += ' --> '
-            pretty_reaction += self.pretty_side(reaction, MultiplicityType.products, absentee_value)
+            pretty_reaction += self.pretty_side(reaction, MultiplicityType.products, absentee_value, skip_blanks)
 
             pretty += pretty_reaction + '\n'
         return pretty
