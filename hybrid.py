@@ -236,10 +236,11 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
     y = y0
     while t < t_end:
         propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
-        future_discontinuities = np.argwhere(discontinuities > t)
-        if future_discontinuities.any():
+        next_discontinuity_index = np.searchsorted(discontinuities, t)
+        # if we've passed all the discontinuities, next_discontinuity_index > len(discontinuities)
+        if next_discontinuity_index <= len(discontinuities):
             # the maximum double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
-            upper_limit = discontinuities[future_discontinuities[0]] - np.finfo(np.double).spacing
+            upper_limit = discontinuities[next_discontinuity_index] - np.finfo(np.double).spacing
         else:
             upper_limit = t_end
         partition = partition_function(propensities)
