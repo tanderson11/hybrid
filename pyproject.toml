@@ -1,10 +1,9 @@
 [tool.poetry]
-name = "hybrid-algorithm-scratch"
+name = "hybrid-algorithm"
 version = "0.1.0"
 description = ""
 authors = ["Thayer Anderson <tanderson11@gmail.com>"]
 readme = "README.md"
-packages = [{include = "hybrid_algorithm_scratch"}]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.11"
