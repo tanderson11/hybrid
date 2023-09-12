@@ -7,10 +7,10 @@ class Species():
     def __init__(self, name, abbreviation) -> None:
         self.name = name
         self.abbreviation = abbreviation
-    
+
     def __hash__(self) -> int:
         return hash((self.name, self.abbreviation))
-    
+
     def __repr__(self) -> str:
         return f"Species(name={self.name}, abbreviation={self.abbreviation})"
 
@@ -36,7 +36,7 @@ class Reaction():
 
     def multiplicities(self, mult_type):
         multplicities = {}
-        
+
         positive_multplicity_data = []
         negative_multiplicity_data = []
         if mult_type == MultiplicityType.reacants:
@@ -57,7 +57,7 @@ class Reaction():
             else:
                 multiplicity = 1
             multplicities[species] = -1 * multiplicity
-        
+
         for species in positive_multplicity_data:
             if isinstance(species, tuple):
                 species, multiplicity = species
@@ -85,7 +85,7 @@ class RateConstantCluster(NamedTuple):
     slice_top: int
 
 class Model():
-    def __init__(self, species: list[Species], reactions: list[Reaction]) -> None:
+    def __init__(self, species: list[Species], reactions: list[Reaction], jit=False) -> None:
         self.species = species
         self.reactions = []
         for r in reactions:
@@ -95,31 +95,68 @@ class Model():
                 self.reactions.extend(r.reactions)
             else:
                 raise TypeError(f"bad type for reaction in model {type(r)}. Expected Reaction or ReactionRateFamily")
-        
+
 
         self.n_species = len(self.species)
         self.n_reactions = len(self.reactions)
 
         # ReactionRateFamilies allow us to calculate k(t) for a group of reactions all at once
-        self.base_k = np.zeros(self.n_reactions)
-        self.k_of_ts = []
+        base_k = np.zeros(self.n_reactions)
+        k_of_ts = []
         i = 0
         # reactions not self.reactions so we see families
         for r in reactions:
             if isinstance(r, Reaction):
                 if isinstance(r.k, float):
-                    self.base_k[i] = r.k
+                    base_k[i] = r.k
                 else:
                     assert(isinstance(r.k, function)), f"a reaction's rate constant should be a float or function with signature k(t) --> float: {r.k}"
-                    self.k_of_ts.append(RateConstantCluster(r.k, i, i+1))
+                    k_of_ts.append(RateConstantCluster(r.k, i, i+1))
                 i+=1
                 continue
             # reaction rate family
-            self.k_of_ts.append(RateConstantCluster(r.k, i, i+len(r.reactions)+1))
+            k_of_ts.append(RateConstantCluster(r.k, i, i+len(r.reactions)+1))
             i += len(r.reactions)
+
+        self.base_k = base_k
+        self.k_of_ts = k_of_ts
 
         self.species_index = {s:i for i,s in enumerate(self.species)}
         self.reaction_index = {r:i for i,r in enumerate(self.reactions)}
+
+        if jit:
+            # convert families into relevant lists
+            self.k_jit = self.kjit_factory(np.array(self.base_k), self.k_of_ts)
+
+    def kjit_factory(self, base_k, k_families):
+        # k_jit can't be an ordinary method because we won't be able to have `self` as an argument in nopython
+        # but needs to close around various properties of self, so we define as a closure using this factory function
+        from numba import jit, float64
+        from numba.types import Array
+        # if we have no explicit time dependence, we our k function just returns base_k
+        if len(k_families) == 0:
+            @jit(Array(float64, 1, "C")(float64), nopython=True)
+            def k_jit(t):
+                k = base_k.copy()
+                return k
+            return k_jit
+        # otherwise, we have to apply the familiy function to differently sized blocks
+        k_functions, k_slice_bottoms, k_slice_tops = map(np.array, zip(*self.k_of_ts))
+        #k_functions = np.array(k_functions, Array(float64, 1, "C")(float64))
+        k_functions = list(k_functions)
+        print(k_functions[0])
+        #k_functions, k_slice_bottoms, k_slice_tops = np.array(k_functions), np.array(k_slice_bottoms), np.array(k_slice_tops)
+        #@jit(Array(float64, 1, "C")(float64), nopython=True)
+        @jit(nopython=True)
+        def k_jit(t):
+            k = base_k.copy()
+            for i in range(len(k_functions)):
+                k_function = k_functions[i]
+                k_function(t)
+                k[k_slice_bottoms[i]:k_slice_tops[i]] = k_functions[i](t)
+            return k
+
+        return k_jit
 
     def multiplicity_matrix(self, mult_type):
         matrix = np.zeros((self.n_species, self.n_reactions))
@@ -128,9 +165,9 @@ class Model():
             reaction_info = reaction.multiplicities(mult_type)
             for species, multiplicity in reaction_info.items():
                 multiplicity_column[self.species_index[species]] = multiplicity
-            
+
             matrix[:,column] = multiplicity_column
-        
+
         return matrix
 
     def k(self, t):
@@ -173,7 +210,7 @@ class Model():
                 species_piece = ''
             else:
                 species_piece = ' +' if prior_species_flag else ' '*2
-            prior_species_flag = True           
+            prior_species_flag = True
             species_piece += self.pad_equally_until(f"{str(int(mult)) if mult < 10 else '>9':.2}{s.abbreviation:.2}", padded_length)
             #print(f"piece: |{species_piece}|")
             pretty_side += species_piece
@@ -195,3 +232,22 @@ class ReactionRateFamily():
     def __init__(self, reactions, k) -> None:
         self.reactions = reactions
         self.k = k
+
+
+if __name__ == '__main__':
+    from numba import jit, float64
+    from numba.types import Array
+
+    @jit(Array(float64, 1, "C")(float64), nopython=True)
+    def k_jit_family(t):
+        return np.array([1.0, 2.0])
+
+    a = Species("A", 'A')
+    b = Species("B", 'B')
+    r1 = Reaction("A+B->2A", [a,b], [(a,2)])
+    r2 = Reaction("A->0", [a], [], k=2.)
+
+    fam = ReactionRateFamily([r1,r2], k=k_jit_family)
+
+    m = Model([a,b], [fam])
+    m.k_jit(0.)

@@ -32,71 +32,77 @@ def partition_by_threshold(propensities, threshold):
     stochastic = propensities <= threshold
     return Partition(~stochastic, stochastic)
 
-def stochastic_event_finder(t, y_expanded, k_of_t,  N, rate_involvement_matrix, deterministic_mask, stochastic_mask, hitting_point):
+def stochastic_event_finder(t, y_expanded, k_of_t, deterministic_mask, stochastic_mask, hitting_point):
     stochastic_progress = y_expanded[-1]
     return stochastic_progress-hitting_point
 stochastic_event_finder.terminal = True
 
-@jit(nopython=True)
-def jit_calculate_propensities(y, k, rate_involvement_matrix):
-    # product along column in rate involvement matrix
-    # with states raised to power of involvement
-    # multiplied by rate constants == propensity
-    # dimension of y is expanded to make it a column vector
-    intensity_power = np.expand_dims(y, axis=1)**rate_involvement_matrix
-    product_down_columns = np.ones(len(k))
-    for i in range(0, len(y)):
-        product_down_columns = product_down_columns * intensity_power[i]
-    return product_down_columns * k
+def jit_calculate_propensities_factory(rate_involvement_matrix):
+    @jit(nopython=True)
+    def jit_calculate_propensities(y, k):
+        # product along column in rate involvement matrix
+        # with states raised to power of involvement
+        # multiplied by rate constants == propensity
+        # dimension of y is expanded to make it a column vector
+        intensity_power = np.expand_dims(y, axis=1)**rate_involvement_matrix
+        product_down_columns = np.ones(len(k))
+        for i in range(0, len(y)):
+            product_down_columns = product_down_columns * intensity_power[i]
+        return product_down_columns * k
+    return jit_calculate_propensities
 
-def jit_dydt(t, y_expanded, k_of_t, N, rate_involvement_matrix, deterministic_mask, stochastic_mask, hitting_point):
-    # by fiat the last entry of y will carry the integral of stochastic rates
-    y = y_expanded[:-1]
+def jit_dydt_factory(N, jit_calculate_propensities):
+    #@jit(float64(Array(float64, 1, "C"), Array(float64, 1, "C"), Array(float64, 1, "C")(float64), Array(float64, 2, "C"), Array(float64, 2, "C"), float64), nopython=True)
+    @jit(nopython=True)
+    def jit_dydt(t, y_expanded, k_of_t, deterministic_mask, stochastic_mask, hitting_point):
+        # by fiat the last entry of y will carry the integral of stochastic rates
+        y = y_expanded[:-1]
 
-    propensities = jit_calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
-    rates, sum_stochastic = _jit_dydt(y, N.astype(float), propensities, deterministic_mask, stochastic_mask)
-    dydt = np.zeros_like(y_expanded)
-    dydt[:-1] = rates
-    dydt[-1]  = sum_stochastic
-    #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
+        propensities = jit_calculate_propensities(y, k_of_t(t))
+        deterministic_propensities = propensities * deterministic_mask
+        stochastic_propensities = propensities * stochastic_mask
+
+        # each propensity feeds back into the stoich matrix to determine
+        # overall rate of change in the state
+        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
+        rates = N @ deterministic_propensities
+        sum_stochastic = np.sum(stochastic_propensities)
+
+        dydt = np.zeros_like(y_expanded)
+        dydt[:-1] = rates
+        dydt[-1]  = sum_stochastic
+        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
+        return dydt
+
+    return jit_dydt
+
+def dydt_factory(N, calculate_propensities):
+    def dydt(t, y_expanded, k_of_t, deterministic_mask, stochastic_mask, hitting_point):
+        # by fiat the last entry of y will carry the integral of stochastic rates
+        y = y_expanded[:-1]
+        #print("y at start of dydt", y)
+        propensities = calculate_propensities(y, k_of_t(t))
+        deterministic_propensities = propensities * deterministic_mask
+        stochastic_propensities = propensities * stochastic_mask
+
+        dydt = np.zeros_like(y_expanded)
+        # each propensity feeds back into the stoich matrix to determine
+        # overall rate of change in the state
+        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
+        dydt[:-1] = N @ deterministic_propensities
+        dydt[-1]  = np.sum(stochastic_propensities)
+        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
+        return dydt
     return dydt
 
-@jit(nopython=True)
-def _jit_dydt(y, N, propensities, deterministic_mask, stochastic_mask):
-    deterministic_propensities = propensities * deterministic_mask
-    stochastic_propensities = propensities * stochastic_mask
-
-    # each propensity feeds back into the stoich matrix to determine
-    # overall rate of change in the state
-    # https://en.wikipedia.org/wiki/Biochemical_systems_equation
-    rates = N @ deterministic_propensities
-    sum_stochastic = sum(stochastic_propensities)
-
-    return rates, sum_stochastic
-
-def dydt(t, y_expanded, k_of_t, N, rate_involvement_matrix, deterministic_mask, stochastic_mask, hitting_point):
-    # by fiat the last entry of y will carry the integral of stochastic rates
-    y = y_expanded[:-1]
-    #print("y at start of dydt", y)
-    propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
-    deterministic_propensities = propensities * deterministic_mask
-    stochastic_propensities = propensities * stochastic_mask
-
-    dydt = np.zeros_like(y_expanded)
-    # each propensity feeds back into the stoich matrix to determine
-    # overall rate of change in the state
-    # https://en.wikipedia.org/wiki/Biochemical_systems_equation
-    dydt[:-1] = N @ deterministic_propensities
-    dydt[-1]  = sum(stochastic_propensities)
-    #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
-    return dydt
-
-def calculate_propensities(y, k, rate_involvement_matrix):
-    # product along column in rate involvement matrix
-    # with states raised to power of involvement
-    # multiplied by rate constants == propensity
-    # dimension of y is expanded to make it a column vector
-    return np.prod(np.expand_dims(y, axis=1)**rate_involvement_matrix, axis=0) * k
+def calculate_propensities_factory(rate_involvement_matrix):
+    def calculate_propensities(y, k):
+        # product along column in rate involvement matrix
+        # with states raised to power of involvement
+        # multiplied by rate constants == propensity
+        # dimension of y is expanded to make it a column vector
+        return np.prod(np.expand_dims(y, axis=1)**rate_involvement_matrix, axis=0) * k
+    return calculate_propensities
 
 class StepStatus(IntEnum):
     upper_limit = 0
@@ -137,6 +143,8 @@ def round_with_method(y, round_randomly=False, rng=None):
         return np.round(y)
 
 def hybrid_step(
+        calculate_propensities: Callable[[float, np.ndarray], np.ndarray],
+        dydt: Callable,
         y0: np.ndarray,
         t_span: list,
         partition: Partition,
@@ -145,7 +153,7 @@ def hybrid_step(
         rate_involvement_matrix: np.ndarray,
         rng: np.random.Generator,
         events: list[Callable[[np.ndarray], float]],
-        simulation_options: SimulationOptions
+        simulation_options: SimulationOptions,
         ) -> StepUpdate:
     """Integrates the partitioned system forward in time until reaching upper bound of integration or a stochastic event occurs.
 
@@ -167,10 +175,6 @@ def hybrid_step(
             update.status: -1 if integration error, 0 if upper limit, 1 if stoch event, 2 if other event,
             update.nfev: number of evaluations of derivative.
     """
-
-    if simulation_options.jit:
-        dydt = jit_dydt
-
     event_flag = False
 
     # not really a hitting *time* as this is a dimensionless quantity,
@@ -189,8 +193,8 @@ def hybrid_step(
     # integrate until hitting or until t_max
     y0_expanded = np.zeros(len(y0)+1)
     y0_expanded[:-1] = y0
-    step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k_of_t, N, rate_involvement_matrix, partition.deterministic, partition.stochastic, hitting_point))
-    
+
+    step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k_of_t, partition.deterministic, partition.stochastic, hitting_point))
     # remove the integral of the rates, which is slotted into the last entry of y
     y_all = step_solved.y[:-1,:]
     y_last = y_all[:,-1]
@@ -201,7 +205,7 @@ def hybrid_step(
     elif step_solved.status == 0:
         y_last = round_with_method(y_last, simulation_options.round_randomly, rng)
         return StepUpdate(step_solved.t[-1], y_last, StepStatus.upper_limit, step_solved.nfev, step_solved.t, y_all)
-    
+
     #print("t_events:", step_solved.t_events)
     # if we reach here, an event has occured
     assert step_solved.status == 1
@@ -224,7 +228,7 @@ def hybrid_step(
 
     # if the event was a stochastic event, cause it to happen
     # first by determining which event happened
-    endpoint_propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
+    endpoint_propensities = calculate_propensities(y, k_of_t(t))
 
     # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
     # I think probably not!
@@ -251,7 +255,7 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
-def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k_of_t: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], simulation_options=SimulationOptions()) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k_of_t: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
@@ -264,7 +268,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
         rng (np.random.Generator): rng to use for waiting time (and rounding if rounding is random)
         discontinuities (list[float], optional): a list of time points where k_of_t is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
-        simulation_options (SimulationOptions): configuration of the simulation. Defaults to SimulationOptions().
+        **kwargs (SimulationOptions): configuration of the simulation. Defaults to SimulationOptions().
 
     Returns:
         SimulationResult: simulation result object:
@@ -274,6 +278,14 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             result.nfev: number of evaluations of the derivative.
 
     """
+    simulation_options = SimulationOptions(**kwargs)
+    if simulation_options.jit:
+        calculate_propensities = jit_calculate_propensities_factory(rate_involvement_matrix.astype(np.float64))
+        dydt = jit_dydt_factory(N.astype(np.float64), calculate_propensities)
+    else:
+        calculate_propensities = calculate_propensities_factory(rate_involvement_matrix)
+        dydt = dydt_factory(N, calculate_propensities)
+
     discontinuities = np.sort(np.array(discontinuities))
     # ignore a discontinuity at 0
     if len(discontinuities) > 0 and discontinuities[0] == 0:
@@ -288,7 +300,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
     t_history = np.zeros(history_length)
     y_history = np.zeros((len(y), history_length))
     history_index = 0
-    
+
     next_discontinuity_index = 0
     discontinuity_surgery_flag = False
     while t < t_end:
@@ -296,7 +308,9 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             discontinuity_surgery_flag = False
             print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
             t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
-        propensities = calculate_propensities(y, k_of_t(t), rate_involvement_matrix)
+
+
+        propensities = calculate_propensities(y, k_of_t(t))
         # if we've passed all the discontinuities, next_discontinuity_index > len(discontinuities)
         if next_discontinuity_index < len(discontinuities):
             # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
@@ -312,7 +326,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
         #print("propensities:", propensities)
         #print("dydt:", dydt(t, _y_expanded, k_of_t, N, rate_involvement_matrix, partition, 0))
 
-        step_update = hybrid_step(y, [t, upper_limit], partition, k_of_t, N, rate_involvement_matrix, rng, events, simulation_options)
+        step_update = hybrid_step(calculate_propensities, dydt, y, [t, upper_limit], partition, k_of_t, N, rate_involvement_matrix, rng, events, simulation_options)
+
         t = step_update.t
         y = step_update.y
         if step_update.status == StepStatus.stochastic_event:
@@ -321,12 +336,12 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             discontinuity_surgery_flag = True
             next_discontinuity_index += 1
         nfev += step_update.nfev
-        
+
         n_samples = len(step_update.t_history)
         t_history[history_index:history_index+n_samples] = step_update.t_history
         y_history[:, history_index:history_index+n_samples] = step_update.y_history
         history_index += n_samples
-    
+
     # truncate histories
     t_history = t_history[:history_index]
     y_history = y_history[:, :history_index]

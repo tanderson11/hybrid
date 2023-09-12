@@ -14,6 +14,9 @@ scipy = "^1.11.1"
 matplotlib = "^3.7.2"
 matlabengine = "^9.14.3"
 numba = "^0.57.1"
+flameprof = "^0.4"
+flameplot = "^1.1.0"
+jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
 
 
 [build-system]
