@@ -142,18 +142,18 @@ class Model():
             return k_jit
         # otherwise, we have to apply the familiy function to differently sized blocks
         k_functions, k_slice_bottoms, k_slice_tops = map(np.array, zip(*self.k_of_ts))
-        #k_functions = np.array(k_functions, Array(float64, 1, "C")(float64))
-        k_functions = list(k_functions)
-        print(k_functions[0])
-        #k_functions, k_slice_bottoms, k_slice_tops = np.array(k_functions), np.array(k_slice_bottoms), np.array(k_slice_tops)
+
+        if len(k_functions) > 1:
+            raise JitNotImplementedError("building a nopython jit for the rate constants isn't supported with more than 1 subcomponent of k having explicit time dependence. Try using a ReactionRateFamily for all reactions and supplying a vectorized k.")
+
+        # now we have noly one subcomponent we have to deal with
+        k_function, k_slice_bottom, k_slice_top = k_functions[0], k_slice_bottoms[0], k_slice_tops[0]
+
         #@jit(Array(float64, 1, "C")(float64), nopython=True)
         @jit(nopython=True)
         def k_jit(t):
             k = base_k.copy()
-            for i in range(len(k_functions)):
-                k_function = k_functions[i]
-                k_function(t)
-                k[k_slice_bottoms[i]:k_slice_tops[i]] = k_functions[i](t)
+            k[k_slice_bottom:k_slice_top] = k_function(t)
             return k
 
         return k_jit
@@ -227,6 +227,9 @@ class Model():
 
             pretty += pretty_reaction + '\n'
         return pretty
+
+class JitNotImplementedError(Exception):
+    pass
 
 class ReactionRateFamily():
     def __init__(self, reactions, k) -> None:

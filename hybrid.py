@@ -76,6 +76,34 @@ def jit_dydt_factory(N, jit_calculate_propensities):
 
     return jit_dydt
 
+def jit_dydt_stupid_for_loop_factory(N, jit_calculate_propensities):
+    @jit(nopython=True)
+    def jit_dydt(t, y_expanded, k_of_t, deterministic_mask, stochastic_mask, hitting_point):
+        # by fiat the last entry of y will carry the integral of stochastic rates
+        y = y_expanded[:-1]
+
+        propensities = jit_calculate_propensities(y, k_of_t(t))
+        deterministic_propensities = propensities * deterministic_mask
+        stochastic_propensities = propensities * stochastic_mask
+
+        # each propensity feeds back into the stoich matrix to determine
+        # overall rate of change in the state
+        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
+        rates = np.zeros(N.shape[0])
+        for i in range(N.shape[0]):
+            for j in range(N.shape[1]):
+                rates[i] = rates[i] + N[i,j] * deterministic_propensities[j]
+
+        sum_stochastic = np.sum(stochastic_propensities)
+
+        dydt = np.zeros_like(y_expanded)
+        dydt[:-1] = rates
+        dydt[-1]  = sum_stochastic
+        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
+        return dydt
+
+    return jit_dydt
+
 def dydt_factory(N, calculate_propensities):
     def dydt(t, y_expanded, k_of_t, deterministic_mask, stochastic_mask, hitting_point):
         # by fiat the last entry of y will carry the integral of stochastic rates
@@ -195,6 +223,7 @@ def hybrid_step(
     y0_expanded[:-1] = y0
 
     step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k_of_t, partition.deterministic, partition.stochastic, hitting_point))
+
     # remove the integral of the rates, which is slotted into the last entry of y
     y_all = step_solved.y[:-1,:]
     y_last = y_all[:,-1]
