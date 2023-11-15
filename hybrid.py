@@ -39,16 +39,17 @@ stochastic_event_finder.terminal = True
 
 def jit_calculate_propensities_factory(rate_involvement_matrix):
     @jit(nopython=True)
-    def jit_calculate_propensities(y, k):
+    def jit_calculate_propensities(y, k, t):
         # product along column in rate involvement matrix
         # with states raised to power of involvement
         # multiplied by rate constants == propensity
         # dimension of y is expanded to make it a column vector
         intensity_power = np.expand_dims(y, axis=1)**rate_involvement_matrix
-        product_down_columns = np.ones(len(k))
+        k_of_t = k(t)
+        product_down_columns = np.ones(len(k_of_t))
         for i in range(0, len(y)):
             product_down_columns = product_down_columns * intensity_power[i]
-        return product_down_columns * k
+        return product_down_columns * k_of_t
     return jit_calculate_propensities
 
 def jit_dydt_factory(N, jit_calculate_propensities):
@@ -58,7 +59,7 @@ def jit_dydt_factory(N, jit_calculate_propensities):
         # by fiat the last entry of y will carry the integral of stochastic rates
         y = y_expanded[:-1]
 
-        propensities = jit_calculate_propensities(y, k(t))
+        propensities = jit_calculate_propensities(y, k, t)
         deterministic_propensities = propensities * deterministic_mask
         stochastic_propensities = propensities * stochastic_mask
 
@@ -81,7 +82,7 @@ def dydt_factory(N, calculate_propensities):
         # by fiat the last entry of y will carry the integral of stochastic rates
         y = y_expanded[:-1]
         #print("y at start of dydt", y)
-        propensities = calculate_propensities(y, k(t))
+        propensities = calculate_propensities(y, k, t)
         deterministic_propensities = propensities * deterministic_mask
         stochastic_propensities = propensities * stochastic_mask
 
@@ -96,12 +97,12 @@ def dydt_factory(N, calculate_propensities):
     return dydt
 
 def calculate_propensities_factory(rate_involvement_matrix):
-    def calculate_propensities(y, k):
+    def calculate_propensities(y, k, t):
         # product along column in rate involvement matrix
         # with states raised to power of involvement
         # multiplied by rate constants == propensity
         # dimension of y is expanded to make it a column vector
-        return np.prod(np.expand_dims(y, axis=1)**rate_involvement_matrix, axis=0) * k
+        return np.prod(np.expand_dims(y, axis=1)**rate_involvement_matrix, axis=0) * k(t)
     return calculate_propensities
 
 class StepStatus(IntEnum):
@@ -229,7 +230,7 @@ def hybrid_step(
 
     # if the event was a stochastic event, cause it to happen
     # first by determining which event happened
-    endpoint_propensities = calculate_propensities(y, k(t))
+    endpoint_propensities = calculate_propensities(y, k, t)
 
     # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
     # I think probably just use current partition!
@@ -323,7 +324,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
 
 
-        propensities = calculate_propensities(y, k(t))
+        propensities = calculate_propensities(y, k, t)
         # if we've passed all the discontinuities, next_discontinuity_index > len(discontinuities)
         if next_discontinuity_index < len(discontinuities):
             # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
