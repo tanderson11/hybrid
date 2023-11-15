@@ -29,7 +29,7 @@ class Partition():
     stochastic: np.ndarray
 
 def partition_by_threshold(propensities, threshold):
-    stochastic = propensities <= threshold
+    stochastic = (propensities <= threshold) & (propensities != 0)
     return Partition(~stochastic, stochastic)
 
 def stochastic_event_finder(t, y_expanded, k, deterministic_mask, stochastic_mask, hitting_point):
@@ -66,34 +66,6 @@ def jit_dydt_factory(N, jit_calculate_propensities):
         # overall rate of change in the state
         # https://en.wikipedia.org/wiki/Biochemical_systems_equation
         rates = N @ deterministic_propensities
-        sum_stochastic = np.sum(stochastic_propensities)
-
-        dydt = np.zeros_like(y_expanded)
-        dydt[:-1] = rates
-        dydt[-1]  = sum_stochastic
-        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
-        return dydt
-
-    return jit_dydt
-
-def jit_dydt_stupid_for_loop_factory(N, jit_calculate_propensities):
-    @jit(nopython=True)
-    def jit_dydt(t, y_expanded, k, deterministic_mask, stochastic_mask, hitting_point):
-        # by fiat the last entry of y will carry the integral of stochastic rates
-        y = y_expanded[:-1]
-
-        propensities = jit_calculate_propensities(y, k(t))
-        deterministic_propensities = propensities * deterministic_mask
-        stochastic_propensities = propensities * stochastic_mask
-
-        # each propensity feeds back into the stoich matrix to determine
-        # overall rate of change in the state
-        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
-        rates = np.zeros(N.shape[0])
-        for i in range(N.shape[0]):
-            for j in range(N.shape[1]):
-                rates[i] = rates[i] + N[i,j] * deterministic_propensities[j]
-
         sum_stochastic = np.sum(stochastic_propensities)
 
         dydt = np.zeros_like(y_expanded)
@@ -163,9 +135,9 @@ def canonicalize_event(t_events, y_events):
 
 def round_with_method(y, round_randomly=False, rng=None):
     if round_randomly:
-        # round down if random float is greater than decimal
-        # round up otherwise
-        rounded = np.round((rng.random(y.shape) <= (y - np.floor(y))) + y)
+        # round up if random float is less than decimal (small decimal ==> rarely round up)
+        # round down otherwise
+        rounded = (rng.random(y.shape) <= (y - np.floor(y))) + np.floor(y)
         return rounded
     else:
         return np.round(y)
@@ -260,8 +232,9 @@ def hybrid_step(
     endpoint_propensities = calculate_propensities(y, k(t))
 
     # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
-    # I think probably not!
+    # I think probably just use current partition!
     #endpoint_partition = partition_function(endpoint_propensities)
+    # I think we want to use starting partition but endpoint propensities!
 
     valid_selections = endpoint_propensities * partition.stochastic
 
@@ -284,7 +257,7 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
-def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], **kwargs) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
@@ -312,10 +285,19 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
     simulation_options = SimulationOptions(**kwargs)
     if simulation_options.jit:
         calculate_propensities = jit_calculate_propensities_factory(rate_involvement_matrix.astype(np.float64))
-        dydt = jit_dydt_factory(N.astype(np.float64), calculate_propensities)
     else:
         calculate_propensities = calculate_propensities_factory(rate_involvement_matrix)
-        dydt = dydt_factory(N, calculate_propensities)
+
+    if expert_dydt_factory is None:
+        if simulation_options.jit:
+            dydt = jit_dydt_factory(N.astype(np.float64), calculate_propensities)
+        else:
+            dydt = dydt_factory(N, calculate_propensities)
+    else:
+        dydt = expert_dydt_factory(calculate_propensities)
+        if simulation_options.jit:
+            from numba.core.registry import CPUDispatcher
+            assert(isinstance(dydt, CPUDispatcher))
 
     discontinuities = np.sort(np.array(discontinuities))
     # ignore a discontinuity at 0

@@ -22,7 +22,7 @@ class MultiplicityType(Enum):
 
 class Reaction():
     def __init__(self, description, reactants, products, rate_involvement=None, k=None, reversible=False) -> None:
-        assert reversible == False
+        assert reversible == False, "Reversible reactions are not supported. Create separate forward and back reactions instead."
         self.description = description
 
         self.k = k
