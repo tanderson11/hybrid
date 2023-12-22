@@ -16,8 +16,13 @@ numba = "^0.58.1"
 flameprof = "^0.4"
 flameplot = "^1.1.0"
 jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
-reactionmodel = {git = "https://github.com/tanderson11/reactionmodel.git" }
 
+[tool.poetry.group.extras.dependencies]
+simpleeval = "^0.9.13"
+
+
+[tool.poetry.group.dev.dependencies]
+importlib = "^1.0.4"
 
 [build-system]
 requires = ["poetry-core"]

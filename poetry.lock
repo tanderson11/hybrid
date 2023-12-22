@@ -821,6 +821,17 @@ packaging = "*"
 pandas = "*"
 
 [[package]]
+name = "importlib"
+version = "1.0.4"
+description = "Backport of importlib.import_module() from Python 2.7"
+category = "dev"
+optional = false
+python-versions = "*"
+files = [
+    {file = "importlib-1.0.4.zip", hash = "sha256:b6ee7066fea66e35f8d0acee24d98006de1a0a8a94a8ce6efe73a9a23c8d9826"},
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "7.0.0"
 description = "Read metadata from Python packages"
@@ -2550,27 +2561,6 @@ packaging = "*"
 test = ["pytest (>=6,!=7.0.0,!=7.0.1)", "pytest-cov (>=3.0.0)", "pytest-qt"]
 
 [[package]]
-name = "reactionmodel"
-version = "0.1.0"
-description = "A package for defining a set of reactions which convert reactants to products and easily simulating them deterministically or stochastically."
-category = "main"
-optional = false
-python-versions = "^3.9"
-files = []
-develop = false
-
-[package.dependencies]
-numpy = "^1.25"
-pandas = "^2.1.4"
-simpleeval = "^0.9.13"
-
-[package.source]
-type = "git"
-url = "https://github.com/tanderson11/reactionmodel.git"
-reference = "HEAD"
-resolved_reference = "63e3abf623d16aca878d7805ed1ab01b9e3b989e"
-
-[[package]]
 name = "referencing"
 version = "0.32.0"
 description = "JSON Referencing + Python"
@@ -2897,7 +2887,7 @@ win32 = ["pywin32"]
 name = "simpleeval"
 version = "0.9.13"
 description = "A simple, safe single expression evaluator library."
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 files = [
@@ -3240,4 +3230,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "060d65cc44538aeb00a18a4bdcf943275d68aee49000e8ef69490c92083414bc"
+content-hash = "ae3c279fc8ee73bfdbb5958d44fc1acf4ce3046d2ae4036e2c9e23e0481c1c6a"
