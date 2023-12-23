@@ -184,17 +184,19 @@ def hybrid_step(
     hitting_point = rng.exponential(1)
 
     # a continuous event function that will record 0 when the hitting point is reached
-    extra_events = events
     events = [stochastic_event_finder]
+    extra_events = events
+
     events.extend(extra_events)
     # all our events should be terminal
     for e in events:
         assert e.terminal
 
-    # integrate until hitting or until t_max
+    # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
     y0_expanded = np.zeros(len(y0)+1)
     y0_expanded[:-1] = y0
 
+    # integrate until hitting or until t_max
     step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k, partition.deterministic, partition.stochastic, hitting_point))
 
     # remove the integral of the rates, which is slotted into the last entry of y
@@ -224,7 +226,7 @@ def hybrid_step(
     y = round_with_method(y, simulation_options.round_randomly, rng)
 
     # if the event isn't a stochastic event, then we were halting to reassess partition
-    # so: move to the update but don't adjudicate any events
+    # so: we simply return the state of the system at the time of our event
     if not event_flag:
         return StepUpdate(t, y, StepStatus.other_terminal_event, step_solved.nfev, step_solved.t, y_all)
 
@@ -239,8 +241,10 @@ def hybrid_step(
 
     valid_selections = endpoint_propensities * partition.stochastic
 
-    # TODO: fix if sum == 0 to have no division by 0
-    valid_selections /= valid_selections.sum()
+    # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
+    selection_sum = valid_selections.sum()
+    assert selection_sum != 0. 
+    valid_selections /= selection_sum
     valid_selections = valid_selections.cumsum()
 
     # the first entry that is greater than a random float is our event choice
@@ -249,8 +253,8 @@ def hybrid_step(
     entry = np.argmax(valid_selections > pathway_rand)
     path_index = np.unravel_index(entry, valid_selections.shape)
 
-    # our pathway updater converts an index into rates denoting which change happened
-    # into an actual update step of our species quantities
+    # N_ij = net change in i after unit progress in reaction j
+    # so the appropriate column of the stoich matrix tells us how to do our update
     update = np.transpose(N[:,path_index])
     update = update.reshape(y.shape)
     y += update
@@ -265,17 +269,18 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
         y0 (np.ndarray): initial state of the system.
         t_span (list[float]): [t0, t_upper_limit].
         partition_function (Callable[[np.ndarray], Partition]): function that takes rates at time t and outputs a partition of the system.
-        k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or a list of unchanging rate constants.
+        k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or an array of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
         rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (power) for species i in reaction j.
         rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
         discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
+        expert_dydt_factory (Callable[[Callable], Callable]): a function that takes the propensity calculator and returns dydt. This interface is useful if through expert knowledge of the system, you can provide a faster calculation of the derivative than the matrix multiplication rates = N @ deterministic_propensities. Defaults to None.
         **kwargs (SimulationOptions): configuration of the simulation. Defaults to SimulationOptions().
 
     Returns:
         SimulationResult: simulation result object:
-            result.t: t_end, should be approximately equal to t_span[-1],
+            result.t: t_end, should be close to t_span[-1],
             result.y: system state at t_end,
             result.n_stochastic: number of stochastic events that occured,
             result.nfev: number of evaluations of the derivative.
@@ -325,10 +330,9 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
 
 
         propensities = calculate_propensities(y, k, t)
-        # if we've passed all the discontinuities, next_discontinuity_index > len(discontinuities)
         if next_discontinuity_index < len(discontinuities):
             # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
-            upper_limit = discontinuities[next_discontinuity_index] - 1e-10
+            upper_limit = np.nextafter(discontinuities[next_discontinuity_index], t0)
             if upper_limit == discontinuities[next_discontinuity_index]:
                 import pdb; pdb.set_trace()
         else:
