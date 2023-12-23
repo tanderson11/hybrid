@@ -183,10 +183,9 @@ def hybrid_step(
     # when the integral of the stochastic rates == hitting_point, an event occurs
     hitting_point = rng.exponential(1)
 
+    extra_events = events
     # a continuous event function that will record 0 when the hitting point is reached
     events = [stochastic_event_finder]
-    extra_events = events
-
     events.extend(extra_events)
     # all our events should be terminal
     for e in events:
@@ -262,17 +261,17 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
-def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray], Partition] = None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
         y0 (np.ndarray): initial state of the system.
         t_span (list[float]): [t0, t_upper_limit].
-        partition_function (Callable[[np.ndarray], Partition]): function that takes rates at time t and outputs a partition of the system.
         k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or an array of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
         rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (power) for species i in reaction j.
         rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
+        partition_function (Callable[[np.ndarray], Partition]): function that takes rates at time t and outputs a partition of the system. Optional, but will give error if not specified.
         discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
         expert_dydt_factory (Callable[[Callable], Callable]): a function that takes the propensity calculator and returns dydt. This interface is useful if through expert knowledge of the system, you can provide a faster calculation of the derivative than the matrix multiplication rates = N @ deterministic_propensities. Defaults to None.
@@ -288,6 +287,10 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
             result.y_history: state of the system at each point in t_history.
 
     """
+    if isinstance(k, str):
+        raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
+    if partition_function is None:
+        raise TypeError("partition function must be specified.")
     simulation_options = SimulationOptions(**kwargs)
     if simulation_options.jit:
         calculate_propensities = jit_calculate_propensities_factory(rate_involvement_matrix.astype(np.float64))
