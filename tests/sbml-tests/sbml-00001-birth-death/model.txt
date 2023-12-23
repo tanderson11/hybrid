@@ -1,0 +1,12 @@
+Species X:
+    description: "an X".
+
+Reaction Birth:
+    reactants: X
+    products: 2X
+    k: Lambda.
+
+Reaction Death:
+    reactants: X
+    products: NULL
+    k: mu.
