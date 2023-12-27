@@ -1,0 +1,12 @@
+Species X:
+    description: "an X".
+
+Reaction Immigration:
+    reactants: null
+    products: X
+    k: alpha.
+
+Reaction Death:
+    reactants: X
+    products: NULL
+    k: mu.
