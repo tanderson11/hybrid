@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Callable
 from numba import jit
+import json
 
 @dataclass(frozen=True)
 class SimulationOptions():
@@ -23,14 +24,38 @@ class SimulationResult():
     t_history: np.ndarray
     y_history: np.ndarray
 
+def load_partition_scheme(file):
+    with open(file, 'r') as f:
+        dictionary = json.load(f)
+    scheme_name = dictionary.pop('name')
+    scheme_class = SCHEMES_BY_NAME[scheme_name]
+    return scheme_class(**dictionary)
+
+@dataclass
+class PartitionScheme():
+    def save(self, file):
+        dictionary = {'name': type(self).__name__}
+        dictionary.update(self.__dict__.copy())
+
+        with open(file, 'w') as f:
+            json.dump(dictionary, f)
+
+@dataclass
+class FixedThresholdPartitioner(PartitionScheme):
+    threshold: float
+
+    def partition_function(self, propensities):
+        stochastic = (propensities <= self.threshold) & (propensities != 0)
+        return Partition(~stochastic, stochastic)
+
+SCHEMES_BY_NAME = {
+    'FixedThresholdPartitioner': FixedThresholdPartitioner
+}
+
 @dataclass(frozen=True)
 class Partition():
     deterministic: np.ndarray
     stochastic: np.ndarray
-
-def partition_by_threshold(propensities, threshold):
-    stochastic = (propensities <= threshold) & (propensities != 0)
-    return Partition(~stochastic, stochastic)
 
 def stochastic_event_finder(t, y_expanded, k, deterministic_mask, stochastic_mask, hitting_point):
     stochastic_progress = y_expanded[-1]
