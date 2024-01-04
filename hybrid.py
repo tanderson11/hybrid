@@ -65,11 +65,27 @@ stochastic_event_finder.terminal = True
 def jit_calculate_propensities_factory(rate_involvement_matrix):
     @jit(nopython=True)
     def jit_calculate_propensities(y, k, t):
-        # product along column in rate involvement matrix
-        # with states raised to power of involvement
-        # multiplied by rate constants == propensity
-        # dimension of y is expanded to make it a column vector
-        intensity_power = np.expand_dims(y, axis=1)**rate_involvement_matrix
+        # Remember, we want total number of distinct combinations * k === rate.
+        # we want to calculate (y_i rate_involvement_ij) (binomial coefficient)
+        # for each species i and each reaction j
+        # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
+        # so we write this little calculator ourselves
+        intensity_power = np.zeros_like(rate_involvement_matrix)
+        for i in range(0, rate_involvement_matrix.shape[0]):
+            for j in range(0, rate_involvement_matrix.shape[1]):
+                if y[i] < rate_involvement_matrix[i][j]:
+                    intensity_power[i][j] = 0.0
+                elif y[i] == rate_involvement_matrix[i][j]:
+                    intensity_power[i][j] = 1.0
+                else:
+                    intensity = 1.0
+                    for x in range(0, rate_involvement_matrix[i][j]):
+                        intensity *= (y[i] - x) / (x+1)
+                    intensity_power[i][j] = intensity
+
+        # then we take the product down the columns (so product over each reaction)
+        # and multiply that output by the vector of rate constants
+        # to get the propensity of each reaction at time t
         k_of_t = k(t)
         product_down_columns = np.ones(len(k_of_t))
         for i in range(0, len(y)):
