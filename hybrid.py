@@ -9,11 +9,26 @@ import json
 
 @dataclass(frozen=True)
 class SimulationOptions():
+    """This class defines the configuration of a Haseltine-Rawlings hybrid forward simulation algorithm.
+
+    Args:
+        jit (bool, optional): whether to insist that propensities, derivatives, and rate constants are calculated using Numba jit compiled functions (faster but tedious to write). Defaults to True.
+        approximate_rtot (bool, optional): if True, approximate the total of stochastic propensities as constant between stochastic events (see discussion in IV of Haseltine and Rawlings paper). If True, contrived_no_reaction_rate must be specified. Defaults to False.
+        contrived_no_reaction_rate (float, optional): specified if and only if approximate_rtot=True: a contrived rate of no reaction to ensure that no timestep between stochastic events becomes too large. Defaults to None.
+        deqs (bool, optional): if True, approximate the fast reactions as differential equations. If False, treat the fast reactions as Langevin equations. Defaults to True.
+        round_randomly (bool, optional): if True, round species quantities randomly in proportion to decimal (so 1.8 copies of X becomes 2 with 80% probability). If False, round conventionally. Defaults to True.
+    """
     jit: bool = True
     approximate_rtot: bool = False
-    batch_events: bool = False
-    deterministic: bool = True
+    contrived_no_reaction_rate: float = None
+    deqs: bool = True
     round_randomly: bool = True
+
+    def __post_init__(self):
+        if self.approximate_rtot:
+            assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0
+        else:
+            assert(self.contrived_no_reaction_rate is None)
 
 @dataclass(frozen=True)
 class SimulationResult():
@@ -44,7 +59,7 @@ class PartitionScheme():
 class FixedThresholdPartitioner(PartitionScheme):
     threshold: float
 
-    def partition_function(self, propensities):
+    def partition_function(self, y, propensities):
         stochastic = (propensities <= self.threshold) & (propensities != 0)
         return Partition(~stochastic, stochastic)
 
@@ -245,6 +260,7 @@ def hybrid_step(
 
     # if no event occurred, simply return the current values of t and y
     if step_solved.status == -1:
+        print(step_solved)
         assert False, "integration step failed"
     elif step_solved.status == 0:
         y_last = round_with_method(y_last, simulation_options.round_randomly, rng)
@@ -302,17 +318,17 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
-def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray], Partition] = None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray, np.ndarray], Partition] = None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
         y0 (np.ndarray): initial state of the system.
-        t_span (list[float]): [t0, t_upper_limit].
+        t_span (list[float]): [t_0, t_end].
         k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or an array of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (power) for species i in reaction j.
+        rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (usually: how many times it appears as a reactant) for species i in reaction j.
         rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
-        partition_function (Callable[[np.ndarray], Partition]): function that takes rates at time t and outputs a partition of the system. Optional, but will give error if not specified.
+        partition_function (Callable[[np.ndarray, np.ndarray], Partition]): function that takes (y, propensities) at time t and outputs a partition of the system. Optional, but will give error if not specified.
         discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
         expert_dydt_factory (Callable[[Callable], Callable]): a function that takes the propensity calculator and returns dydt. This interface is useful if through expert knowledge of the system, you can provide a faster calculation of the derivative than the matrix multiplication rates = N @ deterministic_propensities. Defaults to None.
@@ -344,7 +360,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
         else:
             dydt = dydt_factory(N, calculate_propensities)
     else:
-        dydt = expert_dydt_factory(calculate_propensities)
+        dydt = expert_dydt_factory(N.astype(np.float64), calculate_propensities)
         if simulation_options.jit:
             from numba.core.registry import CPUDispatcher
             assert(isinstance(dydt, CPUDispatcher))
@@ -374,6 +390,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
 
 
         propensities = calculate_propensities(y, k, t)
+        partition = partition_function(y, propensities)
+
         if next_discontinuity_index < len(discontinuities):
             # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
             upper_limit = np.nextafter(discontinuities[next_discontinuity_index], t0)
@@ -381,10 +399,9 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
                 import pdb; pdb.set_trace()
         else:
             upper_limit = t_end
-        partition = partition_function(propensities)
 
-        _y_expanded = np.zeros(len(y)+1)
-        _y_expanded[:-1] = y
+        #_y_expanded = np.zeros(len(y)+1)
+        #_y_expanded[:-1] = y
         #print("propensities:", propensities)
         #print("dydt:", dydt(t, _y_expanded, k_of_t, N, rate_involvement_matrix, partition, 0))
 

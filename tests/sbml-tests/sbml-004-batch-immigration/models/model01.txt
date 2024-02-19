@@ -2,7 +2,7 @@ Species X:
     description: "an X".
 
 Reaction Immigration:
-    reactants: null
+    reactants: NULL
     products: 5X
     k: alpha.
 
