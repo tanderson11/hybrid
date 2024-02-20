@@ -385,7 +385,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
     while t < t_end:
         if discontinuity_surgery_flag and t < discontinuities[next_discontinuity_index-1]:
             discontinuity_surgery_flag = False
-            print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
+            #print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
             t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
 
 
