@@ -7,6 +7,7 @@ import glob
 from dataclasses import dataclass
 from typing import NamedTuple
 import reactionmodel.load
+from simulators import SIMULATORS
 
 def get_path_from_check_string(check_string, prefix, directory_name, filename):
     match = re.search(f'{prefix}([0-9]+)', check_string)
@@ -27,7 +28,7 @@ def get_path_tuple(root, check):
 
     return SpecificationPaths(model_path, parameters_path, config_path, ic_path)
 
-def extend_suite_from_specifications(suite, root, specifications):
+def extend_via_checks(tests, root, specifications):
     tests_to_do = []
     for check in glob.glob(os.path.join(root, 'checks', '*/')):
         check_dir_root = check.split('/')[-2]
@@ -38,15 +39,15 @@ def extend_suite_from_specifications(suite, root, specifications):
         # each check directory contains 1 CSV file with a name like check{SBML_TEST_NUMBER}.csv
         assert(len(glob.glob(os.path.join(check_dir, 'check*.csv')))) == 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
         check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
-        suite.addTest(TestFromSpecification(spec_name, specification, check_file))
-    return suite
+        tests.append((root, spec_name, specification, check_file))
+    return tests
 
 def get_files(root, individual, collection, pattern):
     if os.path.isfile(os.path.join(root, individual)):
         return [os.path.join(root, individual)]
     return glob.glob(os.path.join(root, collection, pattern))
 
-def extend_suite_from_dir(suite, dir):
+def extend_with_tests_from_dir(tests, dir):
     print(f"Extending test suite from {dir}\nAll directories within {os.path.join(dir, 'checks/')} that match specifications in {dir} will be used as tests.")
     model_paths  = get_files(dir, 'model.txt', 'models', 'model*.txt')
     params_paths = get_files(dir, 'parameters.txt', 'parameters', 'parameters*.txt')
@@ -71,9 +72,13 @@ def extend_suite_from_dir(suite, dir):
                             identifier += id_str + str(match[1])
                     # if identifier == '': all of the configuration files lived in root directory, so the check should just live in the root of the check directory
                     specifications[identifier] = specification
-    return extend_suite_from_specifications(suite, dir, specifications)
+    return extend_via_checks(tests, dir, specifications)
 
-#sbml_tests = extend_suite_from_dir()
+sbml_tests = []
+sbml_root = "./tests/sbml-tests/"
+test_dirs = glob.glob(os.path.join(sbml_root, 'sbml-*'))
+for t_dir in test_dirs:
+    extend_with_tests_from_dir(sbml_tests, t_dir)
 
 @dataclass
 class SimulatorArguments():
@@ -82,42 +87,46 @@ class SimulatorArguments():
 
 class TestFromSpecificationMeta(type):
     def __new__(mcs, names, bases, dct):
-        def 
+        def gen_test(specification, check_file):
+            def test(self):
+                self.specification = specification
+                self.check_file = check_file
+                # load the csv of analytic/high quality simulation results
+                self.check_data = pd.read_csv(self.check_file)
+
+                self._test_single()
+            return test
+
+        for root, spec_name, specification, check_file in sbml_tests:
+            dct[f'test_{root}_{spec_name}'] = gen_test(specification, check_file)
+        return type.__new__(mcs, names, bases, dct)
 
 class TestFromSpecification(unittest.TestCase, metaclass=TestFromSpecificationMeta):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-
-    def __init__(self, name, specification, check_file):
-        super().__init__(name)
-        self.specification = specification
-        self.check_file = check_file
+    n = 1
 
     class TestResult(NamedTuple):
         results_df: pd.DataFrame
         check_df: pd.DataFrame
         z_scores_for_mean_by_species: pd.DataFrame
 
-    def setUp(self):
-        # load the csv of analytic/high quality simulation results
-        self.check_data = pd.read_csv(self.check_file)
-
     def tearDown(self):
         # save results
-        results_table = self.test_result.results_table
-        z_ts = self.test_result.z_ts
-        results_table.to_csv(os.path.join(os.path.dirname(self.check_path), f'n={self.n}_simulation_results.csv'))
-        z_ts.to_csv(os.path.join(os.path.dirname(self.check_path), f'n={n}_simulation_zscores.csv'))
+        results_table = self.test_result.results_df
+        z_ts = self.test_result.z_scores_for_mean_by_species
+        results_table.to_csv(os.path.join(os.path.dirname(self.check_file), f'n={self.n}_simulation_results.csv'))
+        z_ts.to_csv(os.path.join(os.path.dirname(self.check_file), f'n={self.n}_simulation_zscores.csv'))
 
-    def test_single(self):
-        results = self.do_simulations(self.specification, n=self.n)
+    def _test_single(self):
+        results = self.do_simulations()
         desired_species = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
         all_species = [s.name for s in self.specification.model.species]
         targets = [all_species.index(s) for s in desired_species]
-        aligned = align_results(results, self.check_data['time'], targets, desired_species)
+        aligned = self.align_results(results, self.check_data['time'], targets, desired_species)
 
-        results_table, z_ts = z_score_for_mean(aligned, self.check_data, self.n)
+        results_table, z_ts = self.z_score_for_mean(aligned, self.check_data, self.n)
 
-        self.test_result = TestResult(results_table, self.check_data, z_ts)
+        self.test_result = self.TestResult(results_table, self.check_data, z_ts)
 
         # assert something about zscores
         # TK
@@ -180,11 +189,4 @@ class TestFromSpecification(unittest.TestCase, metaclass=TestFromSpecificationMe
         return results_to_check, z_ts
 
 if __name__ == '__main__':
-    runner = unittest.TextTestRunner()
-    sbml_root = "./tests/sbml-tests/"
-    sbml_tests = unittest.TestSuite()
-    test_dirs = glob.glob(os.path.join(sbml_root, 'sbml-*'))
-    for t_dir in test_dirs:
-        extend_suite_from_dir(sbml_tests, t_dir)
-    print(sbml_tests)
-    runner.run(sbml_tests)
+    unittest.main()
