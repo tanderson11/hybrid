@@ -7,6 +7,9 @@ from typing import Callable
 from numba import jit
 import json
 
+class HybridNotImplementedError(Exception):
+    pass
+
 @dataclass(frozen=True)
 class SimulationOptions():
     """This class defines the configuration of a Haseltine-Rawlings hybrid forward simulation algorithm.
@@ -25,8 +28,10 @@ class SimulationOptions():
     round_randomly: bool = True
 
     def __post_init__(self):
+        if not self.deqs: raise HybridNotImplementedError("simulation was configured with deqs=False, but Langevin equations are not implemented.")
+        #if self.approximate_rtot: raise HybridNotImplementedError("simulation was configured with approximate_rtot=True, but the approximation of constant stochastic propensities between events is not implemented.")
         if self.approximate_rtot:
-            assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0
+            assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
         else:
             assert(self.contrived_no_reaction_rate is None)
 
@@ -212,7 +217,7 @@ def hybrid_step(
         events: list[Callable[[np.ndarray], float]],
         simulation_options: SimulationOptions,
         ) -> StepUpdate:
-    """Integrates the partitioned system forward in time until reaching upper bound of integration or a stochastic event occurs.
+    """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs.
 
     Args:
         y0 (np.ndarray): initial state.
@@ -240,8 +245,17 @@ def hybrid_step(
     hitting_point = rng.exponential(1)
 
     extra_events = events
-    # a continuous event function that will record 0 when the hitting point is reached
-    events = [stochastic_event_finder]
+    # if we approximate the stochastic propensities as constant between events,
+    # we know the exact hitting time, otherwise we have to stop at an event
+    if simulation_options.approximate_rtot:
+        events = []
+        t_span = t_span.copy()
+        true_upper_limit = t_span[-1]
+        total_stochastic_event_rate = np.sum(calculate_propensities(y0, k, t_span[0])[partition.stochastic]) + simulation_options.contrived_no_reaction_rate
+        t_span[-1] = t_span[0] + hitting_point / total_stochastic_event_rate
+    else:
+        # a continuous event function that will record 0 when the hitting point is reached
+        events = [stochastic_event_finder]
     events.extend(extra_events)
     # all our events should be terminal
     for e in events:
@@ -253,31 +267,41 @@ def hybrid_step(
 
     # integrate until hitting or until t_max
     step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k, partition.deterministic, partition.stochastic, hitting_point))
+    ivp_step_status = step_solved.status
+    # if we are approximating the stochastic rates as constant between events, then hitting the upper limit corresponds to a stochastic event
+    # unless the upper limit is also the true end of the integration
+    if simulation_options.approximate_rtot and true_upper_limit > t_span[-1]:
+        ivp_step_status = 1
 
     # remove the integral of the rates, which is slotted into the last entry of y
     y_all = step_solved.y[:-1,:]
     y_last = y_all[:,-1]
+    t_last = step_solved.t[-1]
 
     # if no event occurred, simply return the current values of t and y
-    if step_solved.status == -1:
+    if ivp_step_status == -1:
         print(step_solved)
         assert False, "integration step failed"
-    elif step_solved.status == 0:
+    elif ivp_step_status == 0:
         y_last = round_with_method(y_last, simulation_options.round_randomly, rng)
-        return StepUpdate(step_solved.t[-1], y_last, StepStatus.upper_limit, step_solved.nfev, step_solved.t, y_all)
+        return StepUpdate(t_last, y_last, StepStatus.upper_limit, step_solved.nfev, step_solved.t, y_all)
 
     #print("t_events:", step_solved.t_events)
     # if we reach here, an event has occured
-    assert step_solved.status == 1
+    assert ivp_step_status == 1
     # if an event occured, move to that time point
-    # first ensure that our expectations are met: 1 event of 1 kind, because we insist on terminal events
-    t, y, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
+    if simulation_options.approximate_rtot:
+        assert len(step_solved.t_events) == 0
+        t, y, event_index = t_last, y_last, 0
+    else:
+        # first ensure that our expectations are met: 1 event of 1 kind, because we insist on terminal events
+        t, y, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
+        # drop expanded term for sum of rates
+        y = y[:-1]
     # we constructed the events list so that the 0th element is always the occurrence of a stochastic event
     if event_index == 0:
         event_flag = True
 
-    # drop expanded term for sum of rates
-    y = y[:-1]
     # round
     y = round_with_method(y, simulation_options.round_randomly, rng)
 
@@ -291,11 +315,12 @@ def hybrid_step(
     endpoint_propensities = calculate_propensities(y, k, t)
 
     # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
-    # I think probably just use current partition!
-    #endpoint_partition = partition_function(endpoint_propensities)
     # I think we want to use starting partition but endpoint propensities!
 
     valid_selections = endpoint_propensities * partition.stochastic
+    # if we have a contrived rate of no reaction, insert it into our array of transition probabilities as the last element
+    if simulation_options.approximate_rtot:
+        valid_selections = np.hstack([valid_selections, np.array([simulation_options.contrived_no_reaction_rate])])
 
     # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
     selection_sum = valid_selections.sum()
@@ -308,6 +333,11 @@ def hybrid_step(
     #print(valid_selections > pathway_rand)
     entry = np.argmax(valid_selections > pathway_rand)
     path_index = np.unravel_index(entry, valid_selections.shape)
+
+    # don't apply any update if our selection was the contrived rate of no reaction
+    #print(np.squeeze(path_index), valid_selections, valid_selections.shape, len(valid_selections))
+    if simulation_options.approximate_rtot and np.squeeze(path_index) == len(valid_selections)-1:
+        return StepUpdate(t,y,StepStatus.stochastic_event,step_solved.nfev, step_solved.t, y_all)
 
     # N_ij = net change in i after unit progress in reaction j
     # so the appropriate column of the stoich matrix tells us how to do our update
@@ -383,6 +413,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
     next_discontinuity_index = 0
     discontinuity_surgery_flag = False
     while t < t_end:
+        #print("t", t, "discontinuities", discontinuities)
         if discontinuity_surgery_flag and t < discontinuities[next_discontinuity_index-1]:
             discontinuity_surgery_flag = False
             #print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
