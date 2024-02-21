@@ -85,7 +85,7 @@ def extend_with_tests_from_dir(tests, dir):
     return extend_via_checks(tests, dir, specifications)
 
 sbml_tests = []
-sbml_root = os.path.join(os.path.dirname(__file__), "tests/sbml-tests/")
+sbml_root = os.path.join(os.path.dirname(__file__), "sbml-tests/")
 test_dirs = glob.glob(os.path.join(sbml_root, 'sbml-*'))
 for t_dir in test_dirs:
     extend_with_tests_from_dir(sbml_tests, t_dir)
