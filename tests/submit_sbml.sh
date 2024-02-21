@@ -8,12 +8,16 @@
 #SBATCH --mail-type=end
 #SBATCH --mail-user=tander64@jhu.edu
 
-#### load and unload modules you may need
+#### load and unload modules
+module load gcc/11.4.0
 module load python/3.9.15
 module load foss/2023a
 module load poetry
 
-#### execute code and write output file to OUT-24log.
+#### execute code
 poetry env use 3.9
-poetry run python clustertest.py $SLURM_JOBID
+echo $SLURM_JOBID
+echo $SLURM_ARRAY_JOB_ID
+echo $SLURM_ARRAY_TASK_ID
+poetry run python clustertest.py $SLURM_ARRAY_TASK_ID
 echo "Finished with job $SLURM_JOBID"
