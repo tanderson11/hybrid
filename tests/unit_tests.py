@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import NamedTuple
 import reactionmodel.load
 from hybrid.simulators import SIMULATORS
+import hybrid.hybrid as hybrid
+
 import pathlib
 
 # wherever we are, save test output to test_output folder
@@ -154,7 +156,6 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
         simulation_options = self.specification.simulation_options.copy()
 
         if simulator == 'hybrid':
-            import hybrid
             partition_path = simulation_options.pop('partition')
             partition_scheme = hybrid.load_partition_scheme(partition_path)
             simulation_options['partition_function'] = partition_scheme.partition_function
