@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=SubmitTest$SLURM_JOBID
+#SBATCH --job-name=SBMLTest
 #SBATCH --time=4:0:0
 #SBATCH --partition=shared
 #SBATCH --nodes=1
@@ -22,9 +22,6 @@ echo $SLURM_JOBID
 echo $SLURM_ARRAY_JOB_ID
 echo $SLURM_ARRAY_TASK_ID
 pwd
-poetry run python -c "print(3.0/2)"
-poetry run which python
-#poetry run python minimaltest.py
-poetry run python clustertest.py 0
-#poetry run python clustertest.py $SLURM_JOBID
+#poetry run which python
+poetry run python -u clustertest.py $SLURM_ARRAY_TASK_ID
 echo "Finished with job $SLURM_JOBID"
