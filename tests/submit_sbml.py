@@ -2,6 +2,7 @@ import sys
 import unittest
 import os
 import subprocess
+import shlex
 
 import unit_tests
 
@@ -12,4 +13,4 @@ if __name__ == '__main__':
     else:
         maxjobs = 16
     ntests = len(list(unittest.TestLoader().loadTestsFromTestCase(unit_tests.TestSBML)))
-    subprocess.run(['sbatch', '-o', 'slurm-%A_%a.out', f'--array=0-{ntests-1}%{maxjobs}' 'submit_sbml.sh'])
+    subprocess.run(shlex.split(f'sbatch -o slurm-%A_%a.out --array=0-{ntests-1}%{maxjobs} submit_sbml.sh'))
