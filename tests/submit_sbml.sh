@@ -14,5 +14,6 @@ module load foss/2023a
 module load poetry
 
 #### execute code and write output file to OUT-24log.
+poetry env use 3.9
 poetry run python clustertest.py $SLURM_JOBID
 echo "Finished with job $SLURM_JOBID"
