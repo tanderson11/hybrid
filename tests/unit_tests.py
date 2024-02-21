@@ -7,7 +7,7 @@ import glob
 from dataclasses import dataclass
 from typing import NamedTuple
 import reactionmodel.load
-from simulators import SIMULATORS
+from hybrid.simulators import SIMULATORS
 import pathlib
 
 # wherever we are, save test output to test_output folder

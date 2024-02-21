@@ -11,5 +11,5 @@ if __name__ == '__main__':
         maxjobs = int(sys.argv[1])
     else:
         maxjobs = 16
-    ntests = len(unittest.TestLoader().loadTestsFromTestCase(unit_tests.TestSBML))
+    ntests = len(list(unittest.TestLoader().loadTestsFromTestCase(unit_tests.TestSBML)))
     subprocess.run(['sbatch', '-o', 'slurm-%A_%a.out', f'--array=0-{ntests-1}%{maxjobs}' 'submit_sbml.sh'])

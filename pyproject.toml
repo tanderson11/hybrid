@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "hybrid-algorithm"
+name = "hybrid"
 version = "0.1.0"
 description = ""
 authors = ["Thayer Anderson <tanderson11@gmail.com>"]
