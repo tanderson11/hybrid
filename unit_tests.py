@@ -8,8 +8,14 @@ from dataclasses import dataclass
 from typing import NamedTuple
 import reactionmodel.load
 from simulators import SIMULATORS
+import pathlib
+
+# wherever we are, save test output to test_output folder
+test_out = './test_output/'
 
 def get_path_from_check_string(check_string, prefix, directory_name, filename):
+    # we have a check string like p01m01i01 for parameters 1, model 1, and initial condition 1
+    # this function takes prefix (e.g. p/m/i) and finds the txt file that specifies the desired configuration
     match = re.search(f'{prefix}([0-9]+)', check_string)
     model_path = f'{directory_name}/{filename}{match[1]}.txt' if match is not None else f'{filename}.txt'
     return model_path
@@ -21,6 +27,8 @@ class SpecificationPaths(NamedTuple):
     initial_condition_path: str
 
 def get_path_tuple(root, check):
+    # for each component of a specification, find the file specifying that component
+    # return the files grouped as a tuple 
     model_path = os.path.join(root, get_path_from_check_string(check, 'm', 'models', 'model'))
     parameters_path = os.path.join(root, get_path_from_check_string(check, 'p', 'parameters', 'parameters'))
     config_path = os.path.join(root, get_path_from_check_string(check, 'c', 'configs', 'config'))
@@ -29,6 +37,7 @@ def get_path_tuple(root, check):
     return SpecificationPaths(model_path, parameters_path, config_path, ic_path)
 
 def extend_via_checks(tests, root, specifications):
+    # use the subdirectories of root/checks to determine what tests exist
     tests_to_do = []
     for check in glob.glob(os.path.join(root, 'checks', '*/')):
         check_dir_root = check.split('/')[-2]
@@ -48,6 +57,7 @@ def get_files(root, individual, collection, pattern):
     return glob.glob(os.path.join(root, collection, pattern))
 
 def extend_with_tests_from_dir(tests, dir):
+    # crawl dir to find all tests in that dir and add them to the list `tests` passed as an argument
     print(f"Extending test suite from {dir}\nAll directories within {os.path.join(dir, 'checks/')} that match specifications in {dir} will be used as tests.")
     model_paths  = get_files(dir, 'model.txt', 'models', 'model*.txt')
     params_paths = get_files(dir, 'parameters.txt', 'parameters', 'parameters*.txt')
@@ -75,7 +85,7 @@ def extend_with_tests_from_dir(tests, dir):
     return extend_via_checks(tests, dir, specifications)
 
 sbml_tests = []
-sbml_root = "./tests/sbml-tests/"
+sbml_root = os.path.join(os.path.dirname(__file__), "tests/sbml-tests/")
 test_dirs = glob.glob(os.path.join(sbml_root, 'sbml-*'))
 for t_dir in test_dirs:
     extend_with_tests_from_dir(sbml_tests, t_dir)
@@ -85,10 +95,11 @@ class SimulatorArguments():
     t_span: tuple
     t_eval: tuple
 
-class TestFromSpecificationMeta(type):
+class TestSBMLMeta(type):
     def __new__(mcs, names, bases, dct):
-        def gen_test(specification, check_file):
+        def gen_test(test_name, specification, check_file):
             def test(self):
+                self.test_name = test_name
                 self.specification = specification
                 self.check_file = check_file
                 # load the csv of analytic/high quality simulation results
@@ -98,10 +109,11 @@ class TestFromSpecificationMeta(type):
             return test
 
         for root, spec_name, specification, check_file in sbml_tests:
-            dct[f'test_{root}_{spec_name}'] = gen_test(specification, check_file)
+            test_name = f'{os.path.basename(os.path.normpath(root))}_{spec_name}'
+            dct[f'test_{test_name}'] = gen_test(test_name, specification, check_file)
         return type.__new__(mcs, names, bases, dct)
 
-class TestFromSpecification(unittest.TestCase, metaclass=TestFromSpecificationMeta):
+class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
     n = 1
 
@@ -114,8 +126,10 @@ class TestFromSpecification(unittest.TestCase, metaclass=TestFromSpecificationMe
         # save results
         results_table = self.test_result.results_df
         z_ts = self.test_result.z_scores_for_mean_by_species
-        results_table.to_csv(os.path.join(os.path.dirname(self.check_file), f'n={self.n}_simulation_results.csv'))
-        z_ts.to_csv(os.path.join(os.path.dirname(self.check_file), f'n={self.n}_simulation_zscores.csv'))
+        out = os.path.join(test_out, self.test_name)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True) 
+        results_table.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
+        z_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_zscores.csv'))
 
     def _test_single(self):
         results = self.do_simulations()

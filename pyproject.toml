@@ -18,6 +18,7 @@ flameplot = "^1.1.0"
 jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
 reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 statsmodels = "^0.14.1"
+pathlib = "^1.0.1"
 
 [tool.poetry.group.extras.dependencies]
 simpleeval = "^0.9.13"
