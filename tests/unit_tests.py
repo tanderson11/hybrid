@@ -117,7 +117,7 @@ class TestSBMLMeta(type):
 
 class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-    n = 10
+    n = 10000
 
     class TestResult(NamedTuple):
         results_df: pd.DataFrame
@@ -140,11 +140,11 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
 
         results = self.do_simulations(targets, desired_species)
 
-        df = pd.concat(aligned_results, axis=1)
+        df = pd.concat(results, axis=1)
         all_results = pd.concat([df.groupby(by=df.columns, axis=1).mean(), df.groupby(by=df.columns, axis=1).std()], axis=1)
 
-        check_targets = set([c.split('-')[0] for c in check_data.columns if len(c.split('-')) > 1])
-        all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(results_to_check.columns)]
+        check_targets = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
+        all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(all_results.columns)]
 
         z_ts = self.z_score_for_mean(all_results, check_targets, self.check_data, self.n)
 
@@ -169,9 +169,8 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
         for i in range(self.n):
             print(i)
             result = forward_time(initial_condition, self.TEST_ARGUMENTS.t_span, k, self.specification.model.stoichiometry(), self.specification.model.rate_involvement(), rng, discontinuities=self.TEST_ARGUMENTS.t_eval, **simulation_options)
-            self.align_single_result(result, self.check_data['time'], targets, desired_species)
-            #        aligned = self.align_results(results, self.check_data['time'], targets, desired_species)
-            aligned_results.append(result)
+            aligned = self.align_single_result(result, self.check_data['time'], targets, desired_species)
+            aligned_results.append(aligned)
         return aligned_results
 
     @staticmethod
