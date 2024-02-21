@@ -113,12 +113,11 @@ class TestSBMLMeta(type):
         for root, spec_name, specification, check_file in sbml_tests:
             test_name = f'{os.path.basename(os.path.normpath(root))}_{spec_name}'
             dct[f'test_{test_name}'] = gen_test(test_name, specification, check_file)
-            break
         return type.__new__(mcs, names, bases, dct)
 
 class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-    n = 1
+    n = 10000
 
     class TestResult(NamedTuple):
         results_df: pd.DataFrame
