@@ -117,7 +117,7 @@ class TestSBMLMeta(type):
 
 class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-    n = 1
+    n = 10000
 
     class TestResult(NamedTuple):
         results_df: pd.DataFrame
