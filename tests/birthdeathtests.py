@@ -30,7 +30,7 @@ N_two_species = np.array([[1,-1,0,0],[0,0,1,-1]])
 rate_involvement_two_species = np.array([[1,1,0,0],[0,0,1,1]])
 
 class BirthDeathTest(unittest.TestCase):
-    n = 2
+    n = 10000
     # initial_pop, y0, birth_rate, death_rate, t_span, get_k, N, rate_involvement_matrix, options
     one_species_configuration = (10, 11, 10, [0, 15.0], get_k_one_species, N_one_species, rate_involvement_one_species)
     two_species_configuration = (10, 11, 10, [0, 15.0], get_k_two_species, N_two_species, rate_involvement_two_species)
