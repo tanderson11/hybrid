@@ -7,9 +7,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.11"
-numpy = "^1.24"
+numpy = { file = "/Users/thayer/develop/hybrid/numpy-1.26.4-cp39-cp39-macosx_11_0_arm64.whl" }
+scipy = { file = "/Users/thayer/develop/hybrid/scipy-1.13.0.dev0-cp39-cp39-macosx_12_0_arm64.whl" }
 jupyter = "^1.0.0"
-scipy = "^1.11.1"
 matplotlib = "^3.7.2"
 matlabengine = "^9.14.3"
 numba = "^0.58.1"
@@ -19,6 +19,7 @@ jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
 reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 statsmodels = "^0.14.1"
 pathlib = "^1.0.1"
+parameterized = "^0.9.0"
 
 [tool.poetry.group.extras.dependencies]
 simpleeval = "^0.9.13"
