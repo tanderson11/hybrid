@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.integrate import solve_ivp
 from typing import NamedTuple
 from dataclasses import dataclass
 from enum import IntEnum
@@ -63,7 +62,8 @@ class BirthDeathTest(unittest.TestCase):
 
     def test_birth_death_one_species_jit_with_dc(self):
         y0 = np.array([self.one_species_configuration[0]])
-        options = {'discontinuities':[4.0]}.update(self.simple_jit.copy())
+        options = {'discontinuities':[4.0]}
+        options.update(self.simple_jit.copy())
         self.bd_test(*self.one_species_configuration, y0, options)
 
     def test_birth_death_one_species_approximate(self):
@@ -80,7 +80,8 @@ class BirthDeathTest(unittest.TestCase):
 
     def test_birth_death_two_species_jit_with_dc(self):
         y0 = np.array([1e9, self.two_species_configuration[0]])
-        options = {'discontinuities':[4.0]}.update(self.simple_jit.copy())
+        options = {'discontinuities':[4.0]}
+        options.update(self.simple_jit.copy())
         self.bd_test(*self.two_species_configuration, y0, options)
 
     def test_birth_death_two_species_approximate(self):
@@ -88,7 +89,7 @@ class BirthDeathTest(unittest.TestCase):
         self.bd_test(*self.two_species_configuration, y0, self.approximate_options)
 
     def tearDown(self):
-        with open(f"{self.id().split('.')[1]}.txt", 'w') as f:
+        with open(f"{self.id().split('.')[2]}.txt", 'w') as f:
             f.write(f"Analytic extinction probability={self.analytic_extinction_p} Extinctions={self.extinctions}/{self.n}. 95% confidence=({self.ci_lower, self.ci_upper})")
 
     def bd_test(self, initial_pop, birth_rate, death_rate, t_span, get_k, N, rate_involvement_matrix, y0, options):

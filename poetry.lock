@@ -2942,7 +2942,7 @@ category = "main"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "scipy-1.13.0.dev0-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:aadaf362fc9648e908a3ae77e035565be39bb13a9048703189e5d4b747b03b4e"},
+    {file = "scipy-1.13.0.dev0-cp39-cp39-macosx_12_0_arm64.whl", hash = "sha256:a2d8f664666f8c9abc18c1132ed8e19ab833b84eb0635089c476e9af6082573d"},
 ]
 
 [package.dependencies]
@@ -3398,4 +3398,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "f1916f84dfa659cb4fadb1b3b4aae2458c32e63f78c4e3aa30edec4368c3c221"
+content-hash = "24597db3b1c23d99df3e2033f65f5d5d7db91a781617e24242383c4ed0c199a0"
