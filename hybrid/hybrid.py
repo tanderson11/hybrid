@@ -6,6 +6,7 @@ from enum import IntEnum
 from typing import Callable
 from numba import jit
 import json
+from collections import Counter
 
 class HybridNotImplementedError(Exception):
     pass
@@ -68,6 +69,7 @@ class SimulationResult():
     y: np.ndarray
     n_stochastic: int
     nfev: int
+    halt_counter: Counter
     t_history: np.ndarray
     y_history: np.ndarray
 
@@ -312,7 +314,9 @@ def hybrid_step(
         t_span = t_span.copy()
         true_upper_limit = t_span[-1]
         total_stochastic_event_rate = np.sum(calculate_propensities(y0, k, t_span[0])[partition.stochastic]) + simulation_options.contrived_no_reaction_rate
-        t_span[-1] = t_span[0] + hitting_point / total_stochastic_event_rate
+        hitting_time = t_span[0] + hitting_point / total_stochastic_event_rate
+        if hitting_time < true_upper_limit:
+            t_span[-1] = hitting_time
     else:
         # a continuous event function that will record 0 when the hitting point is reached
         events = [stochastic_event_finder]
@@ -462,6 +466,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
             result.y: system state at t_end,
             result.n_stochastic: number of stochastic events that occured,
             result.nfev: number of evaluations of the derivative.
+            result.halt_counter: Counter object of the status of all integration halts.
             result.t_history: every time point evaluated.
             result.y_history: state of the system at each point in t_history.
 
@@ -496,6 +501,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
         discontinuities = discontinuities[1:]
     n_stochastic = 0
     nfev = 0
+    halt_counter = Counter()
     t0, t_end = t_span
     t = t0
     y = y0
@@ -508,7 +514,6 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
     next_discontinuity_index = 0
     discontinuity_surgery_flag = False
     while t < t_end:
-        #print("t", t, "discontinuities", discontinuities)
         if discontinuity_surgery_flag and t < discontinuities[next_discontinuity_index-1]:
             discontinuity_surgery_flag = False
             print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
@@ -535,6 +540,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
 
         t = step_update.t
         y = step_update.y
+        halt_counter.update({step_update.status:1})
         if step_update.status == StepStatus.stochastic_event:
             n_stochastic += 1
         elif step_update.status == StepStatus.t_end:
@@ -550,4 +556,4 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
     # truncate histories
     t_history = t_history[:history_index]
     y_history = y_history[:, :history_index]
-    return SimulationResult(t,y,n_stochastic,nfev,t_history,y_history)
+    return SimulationResult(t,y,n_stochastic,nfev,halt_counter,t_history,y_history)
