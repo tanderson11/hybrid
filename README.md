@@ -18,7 +18,7 @@ Explicit time dependence is possible by specifying `k` as a function of time `t`
 The full signature and output of the `forward_time` function is given below:
 
 ```python
-def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], **kwargs) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callable[[np.ndarray], Partition], k: Callable[[float], np.ndarray], N: np.ndarray, kinetic_order_matrix: np.ndarray, rng: np.random.Generator, discontinuities=[], events=[], **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
@@ -27,7 +27,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], partition_function: Callab
         partition_function (Callable[[np.ndarray], Partition]): function that takes rates at time t and outputs a partition of the system.
         k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or a list of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (power) for species i in reaction j.
+        kinetic_order_matrix (np.ndarray): A_ij = kinetic intensity (power) for species i in reaction j.
         rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
         discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].

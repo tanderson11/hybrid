@@ -12,7 +12,7 @@ class PartitionBreakTests(unittest.TestCase):
         t_span = np.array([0.0, -1 * np.log(threshold * 0.8/y0[0])])
         print(t_span)
         N = np.array([[-1.0]]) # first order exponential decay
-        rate_involvement_matrix = np.array([[1.0]])
+        kinetic_order_matrix = np.array([[1.0]])
         rng = np.random.default_rng()
 
         options = {
@@ -22,7 +22,7 @@ class PartitionBreakTests(unittest.TestCase):
 
         y_ends = []
         for i in range(1):
-            result = hybrid.forward_time(y0, t_span, k, N, rate_involvement_matrix, rng, **options)
+            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
             y_ends.append(result.y[0])
         
         print(y_ends)
@@ -42,7 +42,7 @@ class PartitionBreakTests(unittest.TestCase):
         t_span = np.array([0.0, -1 * np.log(threshold * 0.7/y0[0]) / (k[0] - k[1])])
         print(t_span)
         N = np.array([[-1.0, 1.0]]) # first order exponential decay
-        rate_involvement_matrix = np.array([[1.0, 1.0]])
+        kinetic_order_matrix = np.array([[1.0, 1.0]])
         rng = np.random.default_rng()
 
         options = {
@@ -52,7 +52,7 @@ class PartitionBreakTests(unittest.TestCase):
 
         y_ends = []
         for i in range(4):
-            result = hybrid.forward_time(y0, t_span, k, N, rate_involvement_matrix, rng, **options)
+            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
             y_ends.append(result.y[0])
         
         print(y_ends)
@@ -72,7 +72,7 @@ class PartitionBreakTests(unittest.TestCase):
         t_span = np.array([0.0, -1 * np.log(threshold * 0.8/y0[0])])
         print(t_span)
         N = np.array([[-1.0]]) # first order exponential decay
-        rate_involvement_matrix = np.array([[1.0]])
+        kinetic_order_matrix = np.array([[1.0]])
         rng = np.random.default_rng()
 
         options = {
@@ -85,7 +85,7 @@ class PartitionBreakTests(unittest.TestCase):
 
         y_ends = []
         for i in range(1):
-            result = hybrid.forward_time(y0, t_span, k, N, rate_involvement_matrix, rng, **options)
+            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
             y_ends.append(result.y[0])
         
         print(y_ends)

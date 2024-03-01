@@ -129,7 +129,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
     return partition_change_finder
 
-def jit_calculate_propensities_factory(rate_involvement_matrix, rate_constants_are_constant):
+def jit_calculate_propensities_factory(kinetic_order_matrix, rate_constants_are_constant):
     @jit(nopython=True)
     def jit_calculate_propensities(y, k, t):
         # Remember, we want total number of distinct combinations * k === rate.
@@ -137,16 +137,16 @@ def jit_calculate_propensities_factory(rate_involvement_matrix, rate_constants_a
         # for each species i and each reaction j
         # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
         # so we write this little calculator ourselves
-        intensity_power = np.zeros_like(rate_involvement_matrix)
-        for i in range(0, rate_involvement_matrix.shape[0]):
-            for j in range(0, rate_involvement_matrix.shape[1]):
-                if y[i] < rate_involvement_matrix[i][j]:
+        intensity_power = np.zeros_like(kinetic_order_matrix)
+        for i in range(0, kinetic_order_matrix.shape[0]):
+            for j in range(0, kinetic_order_matrix.shape[1]):
+                if y[i] < kinetic_order_matrix[i][j]:
                     intensity_power[i][j] = 0.0
-                elif y[i] == rate_involvement_matrix[i][j]:
+                elif y[i] == kinetic_order_matrix[i][j]:
                     intensity_power[i][j] = 1.0
                 else:
                     intensity = 1.0
-                    for x in range(0, rate_involvement_matrix[i][j]):
+                    for x in range(0, kinetic_order_matrix[i][j]):
                         intensity *= (y[i] - x) / (x+1)
                     intensity_power[i][j] = intensity
 
@@ -210,13 +210,13 @@ def dydt_factory(N):
         return dydt
     return dydt
 
-def calculate_propensities_factory(rate_involvement_matrix):
+def calculate_propensities_factory(kinetic_order_matrix):
     def calculate_propensities(y, k, t):
         # product along column in rate involvement matrix
         # with states raised to power of involvement
         # multiplied by rate constants == propensity
         # dimension of y is expanded to make it a column vector
-        return np.prod(np.expand_dims(y, axis=1)**rate_involvement_matrix, axis=0) * k(t)
+        return np.prod(np.expand_dims(y, axis=1)**kinetic_order_matrix, axis=0) * k(t)
     return calculate_propensities
 
 class StepStatus(IntEnum):
@@ -271,10 +271,11 @@ def hybrid_step(
         partition: Partition,
         k: Callable[[float], np.ndarray],
         N: np.ndarray,
-        rate_involvement_matrix: np.ndarray,
+        kinetic_order_matrix: np.ndarray,
         rng: np.random.Generator,
         events: list[Callable[[np.ndarray], float]],
         simulation_options: SimulationOptions,
+        t_eval: np.ndarray = None,
         ) -> StepUpdate:
     """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs.
 
@@ -284,7 +285,7 @@ def hybrid_step(
         partition (Partition): partition.stochastic and partition.deterministic are masks for pathways.
         k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or a list of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        rate_involvement_matrix (np.ndarray): A_ij = kinetic order for species i in reaction j.
+        kinetic_order_matrix (np.ndarray): A_ij = kinetic order for species i in reaction j.
         rng (np.random.Generator)
         events (list[Callable[[np.ndarray], float]]): a list of continuous functions of the state that have a 0 when an event of interest occurs.
         simulation_options (SimulationOptions): configuration of the simulation.
@@ -325,7 +326,7 @@ def hybrid_step(
     if simulation_options.halt_on_partition_change:
         partition_change_finder = partition_change_finder_factory(simulation_options.partition_fraction_for_halt)
         events.append(partition_change_finder)
-        event_type_cutoffs.append(rate_involvement_matrix.shape[1])
+        event_type_cutoffs.append(kinetic_order_matrix.shape[1])
         event_types.append(StepStatus.partition_change)
 
     if len(extra_events) > 0:
@@ -340,18 +341,20 @@ def hybrid_step(
     y0_expanded = np.zeros(len(y0)+1)
     y0_expanded[:-1] = y0
 
-    #if simulation_options.halt_on_partition_change:
-        #g = [e(t_span[0],y0,k,partition,calculate_propensities,hitting_point) for e in events]
-        #print("g:", g)
-
     # integrate until hitting or until t_max
-    step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k, partition, calculate_propensities, hitting_point))
+    step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k, partition, calculate_propensities, hitting_point), t_eval=t_eval)
     ivp_step_status = step_solved.status
 
-    # remove the integral of the rates, which is slotted into the last entry of y
-    y_all = step_solved.y[:-1,:]
-    y_last = y_all[:,-1]
-    t_last = step_solved.t[-1]
+    # if we use t_eval, we will sometimes have no points returned except in events
+    if len(step_solved.y) > 0:
+        # slice to -1 to the integral of the rates, which is slotted into the last entry of y
+        y_all = step_solved.y[:-1,:]
+        y_last = y_all[:,-1]
+        t_last = step_solved.t[-1]
+    else:
+        y_all = []
+        y_last = []
+        t_last = []
 
     # this branching logic tells us what caused integration to stop
     # and calculates t and y at the stopping spot
@@ -369,7 +372,6 @@ def hybrid_step(
             t, y = t_last, y_last
         else:
             status = StepStatus.t_end
-    # event
     else:
         # if we reach here, an event has occured
         assert ivp_step_status == 1
@@ -443,7 +445,7 @@ def hybrid_step(
     #print(y)
     return StepUpdate(t,y,status,step_solved.nfev, step_solved.t, y_all)
 
-def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, rate_involvement_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray, np.ndarray], Partition] = None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
+def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, kinetic_order_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray, np.ndarray], Partition] = None, t_eval=None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
     """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
 
     Args:
@@ -451,9 +453,10 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
         t_span (list[float]): [t_0, t_end].
         k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or an array of unchanging rate constants.
         N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        rate_involvement_matrix (np.ndarray): A_ij = kinetic intensity (usually: how many times it appears as a reactant) for species i in reaction j.
+        kinetic_order_matrix (np.ndarray): A_ij = kinetic intensity (usually: how many times it appears as a reactant) for species i in reaction j.
         rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
         partition_function (Callable[[np.ndarray, np.ndarray], Partition]): function that takes (y, propensities) at time t and outputs a partition of the system. Optional, but will give error if not specified.
+        t_eval (array_like or None): Times at which to store the computed solution, must be sorted and lie within t_span. If None (default), use points selected by the solver.
         discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
         events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
         expert_dydt_factory (Callable[[Callable], Callable]): a function that takes the propensity calculator and returns dydt. This interface is useful if through expert knowledge of the system, you can provide a faster calculation of the derivative than the matrix multiplication rates = N @ deterministic_propensities. Defaults to None.
@@ -470,8 +473,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
             result.y_history: state of the system at each point in t_history.
 
     """
-    assert N.shape[0] == rate_involvement_matrix.shape[0] == y0.shape[0], "N and rate_involvement_matrix should have rows == # of species"
-    assert N.shape[1] == rate_involvement_matrix.shape[1], "N and rate_involvement_matrix should have columns == # of reaction pathways"
+    assert N.shape[0] == kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
+    assert N.shape[1] == kinetic_order_matrix.shape[1], "N and kinetic_order_matrix should have # columns == # of reaction pathways"
 
     if isinstance(k, str):
         raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
@@ -479,9 +482,9 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
         raise TypeError("partition function must be specified.")
     simulation_options = SimulationOptions(**kwargs)
     if simulation_options.jit:
-        calculate_propensities = jit_calculate_propensities_factory(rate_involvement_matrix.astype(np.float64), isinstance(k, np.ndarray))
+        calculate_propensities = jit_calculate_propensities_factory(kinetic_order_matrix.astype(np.float64), isinstance(k, np.ndarray))
     else:
-        calculate_propensities = calculate_propensities_factory(rate_involvement_matrix)
+        calculate_propensities = calculate_propensities_factory(kinetic_order_matrix)
 
     if expert_dydt_factory is None:
         if simulation_options.jit:
@@ -502,6 +505,7 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
     nfev = 0
     halt_counter = Counter()
     t0, t_end = t_span
+    t_eval = np.asarray(t_eval) if t_eval is not None else None
     t = t0
     y = y0
 
@@ -518,7 +522,6 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
             print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
             t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
 
-
         propensities = calculate_propensities(y, k, t)
         partition = partition_function(y, propensities)
 
@@ -530,12 +533,14 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.nd
         else:
             upper_limit = t_end
 
-        #_y_expanded = np.zeros(len(y)+1)
-        #_y_expanded[:-1] = y
-        #print("propensities:", propensities)
-        #print("dydt:", dydt(t, _y_expanded, k_of_t, N, rate_involvement_matrix, partition, 0))
+        if t_eval is not None:
+            relevant_t_eval = t_eval[(t_eval > t) & (t_eval < upper_limit)]
+            relevant_t_eval = list(relevant_t_eval)
+            relevant_t_eval.append(upper_limit)
+        else:
+            relevant_t_eval = None
 
-        step_update = hybrid_step(calculate_propensities, dydt, y, [t, upper_limit], partition, k, N, rate_involvement_matrix, rng, events, simulation_options)
+        step_update = hybrid_step(calculate_propensities, dydt, y, [t, upper_limit], partition, k, N, kinetic_order_matrix, rng, events, simulation_options, t_eval=relevant_t_eval)
 
         t = step_update.t
         y = step_update.y
