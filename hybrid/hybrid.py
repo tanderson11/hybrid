@@ -54,7 +54,6 @@ class SimulationOptions():
 
     def __post_init__(self):
         if not self.deqs: raise HybridNotImplementedError("simulation was configured with deqs=False, but Langevin equations are not implemented.")
-        #if self.approximate_rtot: raise HybridNotImplementedError("simulation was configured with approximate_rtot=True, but the approximation of constant stochastic propensities between events is not implemented.")
         if self.approximate_rtot:
             assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
         else:
