@@ -51,8 +51,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: np.ndarray, N: np.ndarr
     n_stochastic = 0
     while t < t_end:
         step_update = homogeneous_gillespie_step(y, k, t, t_end, N, calculate_propensities, rng)
-        t = step_update.t
-        y = step_update.y
+        t += step_update.t_update
+        y += step_update.y_update
 
         t_history[history_index] = t
         y_history[:, history_index] = y
@@ -65,8 +65,8 @@ def forward_time(y0: np.ndarray, t_span: list[float], k: np.ndarray, N: np.ndarr
     return SimulationResult(t_history[-1], y_history[:, -1], t_history, y_history, n_stochastic)
 
 class StepUpdate(NamedTuple):
-    t: float
-    y: np.ndarray
+    t_update: float
+    y_update: np.ndarray
     was_stochastic_event: bool
 
 class HittingTimeProposal(NamedTuple):
@@ -80,9 +80,7 @@ def find_hitting_time_inhomogenous(y, k, t, calculate_propensities, rng):
     hitting_time = fsolve(f, x0=1)
     return HittingTimeProposal(hitting_time)
 
-def find_hitting_time_homogeneous(y, k, calculate_propensities, rng):
-    propensities = calculate_propensities(y, k)
-    total_propensity = np.sum(propensities)
+def find_hitting_time_homogeneous(propensities, total_propensity, rng):
     hitting_point = rng.exponential(1)
     hitting_time = hitting_point / total_propensity
     return HittingTimeProposal(hitting_time, propensities, total_propensity)
@@ -105,7 +103,7 @@ def gillespie_update_proposal(N, propensities, total_propensity, rng):
     # N_ij = net change in i after unit progress in reaction j
     # so the appropriate column of the stoich matrix tells us how to do our update
     update = np.transpose(N[:,path_index])
-    update = update.reshape((N.shape[0], 1))
+    update = update.reshape((N.shape[0],))
     return update
 
 def gillespie_step(y, k, t, t_end, N, calculate_propensities, rng):
@@ -114,38 +112,20 @@ def gillespie_step(y, k, t, t_end, N, calculate_propensities, rng):
     endpoint_propensities = calculate_propensities(y, k, hitting_time)
     total_propensity = np.sum(endpoint_propensities)
 
-    selections = endpoint_propensities.cumsum() / total_propensity
-    pathway_rand = rng.random()
-    entry = np.argmax(selections > pathway_rand)
-    path_index = np.unravel_index(entry, selections.shape)
+    update = gillespie_update_proposal(N, endpoint_propensities, total_propensity, rng)
 
-    # N_ij = net change in i after unit progress in reaction j
-    # so the appropriate column of the stoich matrix tells us how to do our update
-    update = np.transpose(N[:,path_index])
-    update = update.reshape(y.shape)
-    y += update
-    t += hitting_time
-
-    return StepUpdate(t, y, was_stochastic_event=True)
+    return StepUpdate(hitting_time, update, was_stochastic_event=True)
 
 def homogeneous_gillespie_step(y, k, t, t_end, N, calculate_propensities, rng):
-    time_proposal = find_hitting_time_homogeneous(y, k, calculate_propensities, rng)
+    propensities = calculate_propensities(y, k)
+    total_propensity = np.sum(propensities)
+    time_proposal = find_hitting_time_homogeneous(propensities, total_propensity, rng)
     hitting_time, propensities, total_propensity = time_proposal
 
     if t + hitting_time > t_end:
-        return StepUpdate(t_end, y, was_stochastic_event=False)
+        return StepUpdate(t_end - t, np.zeros_like(y), was_stochastic_event=False)
 
-    selections = propensities.cumsum() / total_propensity
-    pathway_rand = rng.random()
-    entry = np.argmax(selections > pathway_rand)
-    path_index = np.unravel_index(entry, selections.shape)
+    update = gillespie_update_proposal(N, propensities, total_propensity, rng)
 
-    # N_ij = net change in i after unit progress in reaction j
-    # so the appropriate column of the stoich matrix tells us how to do our update
-    update = np.transpose(N[:,path_index])
-    update = update.reshape(y.shape)
-    y += update
-    t += hitting_time
-
-    return StepUpdate(t, y, was_stochastic_event=True)
+    return StepUpdate(hitting_time, update, was_stochastic_event=True)
 

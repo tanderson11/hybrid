@@ -1,6 +1,6 @@
 import numpy as np
 from numba import jit
-from .gillespie import find_hitting_time_homogeneous
+from .gillespie import find_hitting_time_homogeneous, gillespie_update_proposal
 
 def jit_calculate_propensities_factory(kinetic_order_matrix):
     @jit(nopython=True)
@@ -68,18 +68,24 @@ def tau_step(y, t, t_end, k, N, calculate_propensities, n_c, rng):
     if (~critical_reactions).all():
         tau_prime = np.inf
     else:
-        tau_prime = tau_proposal(propensities[~critical_reactions])
+        tau_prime = min(t_end - t, tau_leap_proposal(propensities[~critical_reactions]))
 
     if tau_prime < rejection_multiple / total_propensity:
         # reject this step and switch to Gillespie for 100 steps
         return
 
-    def calculate_critical_propensities(y, k, t):
-        propensities = calculate_propensities(y, k, t)
-        return propensities[~critical_reactions]
+    tau_prime_prime = min(t_end - t, find_hitting_time_homogeneous(propensities[critical_reactions], rng).tau)
 
-    tau_prime_prime = find_hitting_time_homogeneous(y, k, t, calculate_critical_propensities, rng).tau
+    # no critical events took place in our proposed leap forward of tau_prime, so we execute that leap
+    if tau_prime < tau_prime_prime:
+        tau = tau_prime
+        update = tau_update_proposal(tau_prime, propensities, N, rng)
+    # a single critical event took place at tau_prime_prime, adjudicate that event and the leap of non-critical reactions
+    else:
+        tau = tau_prime_prime
+        gillespie_update = gillespie_update_proposal(N, propensities[critical_reactions], total_propensity, rng)
+        tau_update = tau_update_proposal(tau_prime_prime, propensities[~critical_reactions], N[:, ~critical_reactions])
 
+        update = gillespie_update + tau_update
 
-
-
+    return tau, update
