@@ -1,12 +1,338 @@
 import numpy as np
+from numpy.typing import ArrayLike
 from scipy.integrate import solve_ivp
 from typing import NamedTuple
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import auto
 from typing import Callable
 from numba import jit
 import json
 from collections import Counter
+
+from .simulators import Simulator, StepStatus
+
+class HybridStepStatus(StepStatus):
+    failure = -1
+    t_end = 0
+    stochastic_event = auto()
+    t_end_for_discontinuity = auto()
+    partition_change = auto()
+    contrived_no_reaction = auto()
+    extra_event = auto()
+
+    def event_like(self):
+        return self > HybridStepStatus.t_end
+
+class StepUpdate(NamedTuple):
+    t_history: np.ndarray
+    y_history: np.ndarray
+    status: HybridStepStatus
+    nfev: int
+
+class HybridSimulator(Simulator):
+    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=None, jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
+        if isinstance(k, str):
+            raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
+        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
+        self.partition_function = partition_function
+        self.discontinuities = discontinuities
+        self.next_discontinuity_index = 0 if discontinuities is not None else None
+        self.simulation_options = SimulationOptions(**kwargs)
+        if dydt_function is None:
+            self.dydt = self.construct_dydt_function(N, self.propensity_function, jit)
+        else:
+            self.dydt = dydt_function
+            if self.jit:
+                from numba.core.registry import CPUDispatcher
+                assert(isinstance(propensity_function, CPUDispatcher))
+
+    @classmethod
+    def construct_dydt_function(cls, N, propensity_function, jit=True):
+        if jit:
+            return cls.jit_dydt_factory(N, propensity_function)
+        return cls.dydt_factory(N, propensity_function)
+
+    @staticmethod
+    def jit_dydt_factory(N, propensity_function):
+        @jit(nopython=True)
+        def jit_dydt(t, y_expanded, deterministic_mask, stochastic_mask, propensity_function, hitting_point):
+            # by fiat the last entry of y will carry the integral of stochastic rates
+            y = y_expanded[:-1]
+
+            propensities = propensity_function(t, y)
+            deterministic_propensities = propensities * deterministic_mask
+            stochastic_propensities = propensities * stochastic_mask
+
+            # each propensity feeds back into the stoich matrix to determine
+            # overall rate of change in the state
+            # https://en.wikipedia.org/wiki/Biochemical_systems_equation
+            rates = N @ deterministic_propensities
+            sum_stochastic = np.sum(stochastic_propensities)
+
+            dydt = np.zeros_like(y_expanded)
+            dydt[:-1] = rates
+            dydt[-1]  = sum_stochastic
+            return dydt
+
+        # need this wrapper to access the properties of partition in nopython mode
+        def wrapper(t, y_expanded, partition, propensity_function, hitting_point):
+            return jit_dydt(t, y_expanded, partition.deterministic, partition.stochastic, propensity_function, hitting_point)
+        return wrapper
+
+    @staticmethod
+    def dydt_factory(N, propensity_function):
+        def dydt(t, y_expanded, partition, propensity_function, hitting_point):
+            # by fiat the last entry of y will carry the integral of stochastic rates
+            y = y_expanded[:-1]
+            #print("y at start of dydt", y)
+            propensities = propensity_function(t, y)
+            deterministic_propensities = propensities * partition.deterministic
+            stochastic_propensities = propensities * partition.stochastic
+
+            dydt = np.zeros_like(y_expanded)
+            # each propensity feeds back into the stoich matrix to determine
+            # overall rate of change in the state
+            # https://en.wikipedia.org/wiki/Biochemical_systems_equation
+            dydt[:-1] = N @ deterministic_propensities
+            dydt[-1]  = np.sum(stochastic_propensities)
+            #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
+            return dydt
+        return dydt
+
+    @classmethod
+    def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
+        if jit:
+            return cls.jit_propensity_factory(k, kinetic_order_matrix, inhomogeneous)
+        return cls.propensity_factory(k, kinetic_order_matrix, inhomogeneous)
+
+    @staticmethod
+    def propensity_factory(k, kinetic_order_matrix, inhomogeneous):
+        def calculate_propensities(t, y):
+            if inhomogeneous:
+                k_of_t = k(t)
+            else:
+                k_of_t = k
+            # product along column in rate involvement matrix
+            # with states raised to power of involvement
+            # multiplied by rate constants == propensity
+            # dimension of y is expanded to make it a column vector
+            return np.prod(np.expand_dims(y, axis=1)**kinetic_order_matrix, axis=0) * k_of_t
+        return calculate_propensities
+
+    @staticmethod
+    def jit_propensity_factory(k, kinetic_order_matrix, inhomogeneous):
+        @jit(nopython=True)
+        def jit_calculate_propensities(t, y):
+            # Remember, we want total number of distinct combinations * k === rate.
+            # we want to calculate (y_i rate_involvement_ij) (binomial coefficient)
+            # for each species i and each reaction j
+            # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
+            # so we write this little calculator ourselves
+            intensity_power = np.zeros_like(kinetic_order_matrix)
+            for i in range(0, kinetic_order_matrix.shape[0]):
+                for j in range(0, kinetic_order_matrix.shape[1]):
+                    if y[i] < kinetic_order_matrix[i][j]:
+                        intensity_power[i][j] = 0.0
+                    elif y[i] == kinetic_order_matrix[i][j]:
+                        intensity_power[i][j] = 1.0
+                    else:
+                        intensity = 1.0
+                        for x in range(0, kinetic_order_matrix[i][j]):
+                            intensity *= (y[i] - x) / (x+1)
+                        intensity_power[i][j] = intensity
+
+            # then we take the product down the columns (so product over each reaction)
+            # and multiply that output by the vector of rate constants
+            # to get the propensity of each reaction at time t
+            if inhomogeneous:
+                k_of_t = k(t)
+            else:
+                k_of_t = k
+
+            product_down_columns = np.ones(len(k_of_t))
+            for i in range(0, len(y)):
+                product_down_columns = product_down_columns * intensity_power[i]
+            return product_down_columns * k_of_t
+        return jit_calculate_propensities
+
+    def step(self, t, y, t_end, rng, t_eval, events=[]):
+        """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs."""
+        starting_propensities = self.propensity_function(t, y)
+        partition = self.partition_function(y, starting_propensities)
+
+        t_span = [t, t_end]
+
+        discontinuity_flag = False
+        if self.next_discontinuity_index is None:
+            next_discontinuity = np.inf
+        else:
+            if self.next_discontinuity_index < len(self.discontinuities):
+                next_discontinuity = self.discontinuities[self.next_discontinuity_index]
+
+        if next_discontinuity < t_end:
+            discontinuity_flag = True
+            # integrate only until the last float before the discontinuity
+            t_span[-1] = np.nextafter(next_discontinuity, t)
+
+        # not really a hitting *time* as this is a dimensionless quantity,
+        # a random number drawn from the unit exponential distribution.
+        # when the integral of the stochastic rates == hitting_point, an event occurs
+        hitting_point = rng.exponential(1)
+
+        event_type_cutoffs = []
+        event_types = []
+        extra_events = events
+        # if we approximate the stochastic propensities as constant between events,
+        # we know the exact hitting time, otherwise we have to stop at an event
+        if self.simulation_options.approximate_rtot:
+            events = []
+            total_stochastic_event_rate = np.sum(starting_propensities[partition.stochastic]) + self.simulation_options.contrived_no_reaction_rate
+            hitting_time = t + hitting_point / total_stochastic_event_rate
+            if hitting_time < t_end:
+                t_span[-1] = hitting_time
+                # if discontinuity_flag was set, the upper limit was a discontinuity
+                # but now that we've lowered the upper limit, that is no longer the case
+                discontinuity_flag = False
+        else:
+            # a continuous event function that will record 0 when the hitting point is reached
+            events = [stochastic_event_finder]
+            event_type_cutoffs = [0]
+            event_types = [HybridStepStatus.stochastic_event]
+
+        if self.simulation_options.halt_on_partition_change:
+            partition_change_finder = partition_change_finder_factory(self.simulation_options.partition_fraction_for_halt)
+            events.append(partition_change_finder)
+            event_type_cutoffs.append(self.kinetic_order_matrix.shape[1])
+            event_types.append(HybridStepStatus.partition_change)
+
+        if len(extra_events) > 0:
+            events.extend(extra_events)
+            event_type_cutoffs.append(len(events)-1)
+            event_types.append(HybridStepStatus.extra_event)
+        # all our events should be terminal
+        for e in events:
+            assert e.terminal
+
+        # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
+        y_expanded = np.zeros(len(y)+1)
+        y_expanded[:-1] = y
+
+        # we can't call solve_ivp with all the t_eval, we need to call it with only those time points
+        # that lie between our start and intended upper limit of integration
+        if len(t_eval) > 0:
+            relevant_t_eval = t_eval[(t_eval > t) & (t_eval < t_span[-1])]
+            relevant_t_eval = list(relevant_t_eval)
+            relevant_t_eval.append(t_span[-1])
+        else:
+            # t_eval will be np.array([]), we demote it to None so that solve_ivp returns normal evaluations
+            relevant_t_eval = None
+
+        # integrate until hitting or until t_max
+        step_solved = solve_ivp(self.dydt, t_span, y_expanded, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
+        ivp_step_status = step_solved.status
+
+        t_history = step_solved.t
+        # if we use t_eval, we will sometimes have no points returned except in events, so we need to dodge that error in indexing
+        if len(step_solved.y) > 0:
+            # slice to -1 to drop the integral of the rates, which is slotted into the last entry of y
+            y_history = step_solved.y[:-1,:]
+        else:
+            y_history = np.array([])
+
+        # this branching logic tells us what caused integration to stop
+        if ivp_step_status == -1:
+            status = HybridStepStatus.failure
+            #print(step_solved)
+            assert False, "integration step failed"
+        elif ivp_step_status == 0:
+            # if we are approximating the stochastic rates as constant between events, then hitting the upper limit
+            # corresponds to a stochastic event, unless the upper limit is also the true end of the integration
+            if self.simulation_options.approximate_rtot and t_end > t_span[-1]:
+                status = HybridStepStatus.stochastic_event
+                for t_event in step_solved.t_events:
+                    assert(len(t_event) == 0)
+            else:
+                status = HybridStepStatus.t_end
+        else:
+            # if we reach here, an event has occured
+            assert ivp_step_status == 1
+            # ensure that our expectations are met: 1 event of 1 kind, because we insist on terminal events
+            t_event, y_event, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
+            # drop expanded term for sum of rates
+            y_event = y_event[:-1]
+            
+            # add event state to our history if its absent
+            # it might be absent if t_eval is set
+            if t_event != t_history[-1]:
+                t_history = np.concatenate([t_history, [t_event]])
+                y_history = np.concatenate([y_history, y_event], axis=1)
+
+            # use the event_index to find out what our status is (answer, what kind of event was this?)
+            #print(event_type_cutoffs, event_types)
+            for cutoff, event_status in zip(event_type_cutoffs, event_types):
+                if event_index <= cutoff:
+                    status = event_status
+                    break
+            else: # nobreak
+                assert False, f"Couldn't assign a status to event. Event index = {event_index}. event_cutoffs={event_type_cutoffs}. event_types={event_types}."
+
+        if status == HybridStepStatus.partition_change:
+            print(f"Stopping for partition change. t={t}")
+
+        # round the species quantities at our final time point
+        y_history[:, -1] = round_with_method(y_history[:, -1], self.simulation_options.round_randomly, rng)
+
+        # if we reached the true upper limit of integration simply return the current values of t and y
+        if status == HybridStepStatus.t_end:
+            if discontinuity_flag:
+                status = HybridStepStatus.t_end_for_discontinuity
+                print(f"Doing surgery to avoid discontinuity: skipping from {t_history[-1]} to {np.nextafter(next_discontinuity, t_end)}")
+                t_history[-1] = np.nextafter(next_discontinuity, t_end)
+            ## FIRST RETURN
+            return StepUpdate(t_history, y_history, status, step_solved.nfev)
+        
+        assert HybridStepStatus.event_like(status)
+
+        # if the event isn't a stochastic event, then we were halting to reassess partition
+        # so: we simply return the state of the system at the time of our event
+        if not status == HybridStepStatus.stochastic_event:
+            return StepUpdate(t_history, y_history, status, step_solved.nfev)
+        assert status == HybridStepStatus.stochastic_event
+
+        # if the event was a stochastic event, cause it to happen
+        # first by determining which event happened
+        endpoint_propensities = self.propensity_function(t, y)
+
+        # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
+        # I think we want to use starting partition but endpoint propensities!
+
+        valid_selections = endpoint_propensities * partition.stochastic
+        # if we have a contrived rate of no reaction, insert it into our array of transition probabilities as the last element
+        if self.simulation_options.approximate_rtot:
+            valid_selections = np.hstack([valid_selections, np.array([self.simulation_options.contrived_no_reaction_rate])])
+
+        # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
+        selection_sum = valid_selections.sum()
+        assert selection_sum != 0.
+        valid_selections /= selection_sum
+        valid_selections = valid_selections.cumsum()
+
+        # the first entry that is greater than a random float is our event choice
+        pathway_rand = rng.random()
+        entry = np.argmax(valid_selections > pathway_rand)
+        path_index = np.unravel_index(entry, valid_selections.shape)
+
+        # don't apply any update if our selection was the contrived rate of no reaction
+        if self.simulation_options.approximate_rtot and np.squeeze(path_index) == len(valid_selections)-1:
+            return StepUpdate(t_history, y_history, HybridStepStatus.contrived_no_reaction, step_solved.nfev)
+
+        # N_ij = net change in i after unit progress in reaction j
+        # so the appropriate column of the stoich matrix tells us how to do our update
+        update = np.transpose(self.N[:,path_index])
+        update = update.reshape(y.shape)
+        y_history[:, -1] += update
+
+        return StepUpdate(t_history, y_history, status,step_solved.nfev)
 
 class HybridNotImplementedError(Exception):
     pass
@@ -108,16 +434,15 @@ class Partition():
     # array of values for what threshold was used to partition each propensity
     propensity_thresholds: np.ndarray = None
 
-def stochastic_event_finder(t, y_expanded, k, partition, calculate_propensities, hitting_point):
+def stochastic_event_finder(t, y_expanded, partition, propensity_function, hitting_point):
     stochastic_progress = y_expanded[-1]
     return stochastic_progress-hitting_point
 stochastic_event_finder.terminal = True
 
-
 def partition_change_finder_factory(partition_fraction_for_halt):
-    def partition_change_finder(t, y_expanded, k, partition, calculate_propensities, hitting_point):
+    def partition_change_finder(t, y_expanded, partition, propensity_function, hitting_point):
         y = y_expanded[:-1]
-        propensities = calculate_propensities(y, k, t)
+        propensities = propensity_function(t, y)
         distance_to_switch = np.where(
             partition.deterministic,
             propensities - partition.propensity_thresholds * partition_fraction_for_halt,
@@ -128,115 +453,6 @@ def partition_change_finder_factory(partition_fraction_for_halt):
     partition_change_finder.direction = -1
 
     return partition_change_finder
-
-def jit_calculate_propensities_factory(kinetic_order_matrix, rate_constants_are_constant):
-    @jit(nopython=True)
-    def jit_calculate_propensities(y, k, t):
-        # Remember, we want total number of distinct combinations * k === rate.
-        # we want to calculate (y_i rate_involvement_ij) (binomial coefficient)
-        # for each species i and each reaction j
-        # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
-        # so we write this little calculator ourselves
-        intensity_power = np.zeros_like(kinetic_order_matrix)
-        for i in range(0, kinetic_order_matrix.shape[0]):
-            for j in range(0, kinetic_order_matrix.shape[1]):
-                if y[i] < kinetic_order_matrix[i][j]:
-                    intensity_power[i][j] = 0.0
-                elif y[i] == kinetic_order_matrix[i][j]:
-                    intensity_power[i][j] = 1.0
-                else:
-                    intensity = 1.0
-                    for x in range(0, kinetic_order_matrix[i][j]):
-                        intensity *= (y[i] - x) / (x+1)
-                    intensity_power[i][j] = intensity
-
-        # then we take the product down the columns (so product over each reaction)
-        # and multiply that output by the vector of rate constants
-        # to get the propensity of each reaction at time t
-        if rate_constants_are_constant:
-            k_of_t = k
-        else:
-            k_of_t = k(t)
-        product_down_columns = np.ones(len(k_of_t))
-        for i in range(0, len(y)):
-            product_down_columns = product_down_columns * intensity_power[i]
-        return product_down_columns * k_of_t
-    return jit_calculate_propensities
-
-def jit_dydt_factory(N):
-    #@jit(float64(Array(float64, 1, "C"), Array(float64, 1, "C"), Array(float64, 1, "C")(float64), Array(float64, 2, "C"), Array(float64, 2, "C"), float64), nopython=True)
-    @jit(nopython=True)
-    def jit_dydt(t, y_expanded, k, deterministic_mask, stochastic_mask, calculate_propensities, hitting_point):
-        # by fiat the last entry of y will carry the integral of stochastic rates
-        y = y_expanded[:-1]
-
-        propensities = calculate_propensities(y, k, t)
-        deterministic_propensities = propensities * deterministic_mask
-        stochastic_propensities = propensities * stochastic_mask
-
-        # each propensity feeds back into the stoich matrix to determine
-        # overall rate of change in the state
-        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
-        rates = N @ deterministic_propensities
-        sum_stochastic = np.sum(stochastic_propensities)
-
-        dydt = np.zeros_like(y_expanded)
-        dydt[:-1] = rates
-        dydt[-1]  = sum_stochastic
-        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
-        return dydt
-
-    def wrapper(t, y_expanded, k, partition, calculate_propensities, hitting_point):
-        return jit_dydt(t, y_expanded, k, partition.deterministic, partition.stochastic, calculate_propensities, hitting_point)
-
-    return wrapper
-
-def dydt_factory(N):
-    def dydt(t, y_expanded, k, partition, calculate_propensities, hitting_point):
-        # by fiat the last entry of y will carry the integral of stochastic rates
-        y = y_expanded[:-1]
-        #print("y at start of dydt", y)
-        propensities = calculate_propensities(y, k, t)
-        deterministic_propensities = propensities * partition.deterministic
-        stochastic_propensities = propensities * partition.stochastic
-
-        dydt = np.zeros_like(y_expanded)
-        # each propensity feeds back into the stoich matrix to determine
-        # overall rate of change in the state
-        # https://en.wikipedia.org/wiki/Biochemical_systems_equation
-        dydt[:-1] = N @ deterministic_propensities
-        dydt[-1]  = np.sum(stochastic_propensities)
-        #print("t", t, "y_expanded", y_expanded, "dydt", dydt)
-        return dydt
-    return dydt
-
-def calculate_propensities_factory(kinetic_order_matrix):
-    def calculate_propensities(y, k, t):
-        # product along column in rate involvement matrix
-        # with states raised to power of involvement
-        # multiplied by rate constants == propensity
-        # dimension of y is expanded to make it a column vector
-        return np.prod(np.expand_dims(y, axis=1)**kinetic_order_matrix, axis=0) * k(t)
-    return calculate_propensities
-
-class StepStatus(IntEnum):
-    failure = -1
-    t_end = 0
-    stochastic_event = 1
-    partition_change = 2
-    contrived_no_reaction = 3
-    extra_event = 4
-
-    def event_like(self):
-        return self > StepStatus.t_end
-
-class StepUpdate(NamedTuple):
-    t: float
-    y: np.ndarray
-    status: StepStatus
-    nfev: int
-    t_history: np.ndarray
-    y_history: np.ndarray
 
 def canonicalize_event(t_events, y_events):
     event_index = None
@@ -262,302 +478,3 @@ def round_with_method(y, round_randomly=False, rng=None):
         return rounded
     else:
         return np.round(y)
-
-def hybrid_step(
-        calculate_propensities: Callable[[float, np.ndarray], np.ndarray],
-        dydt: Callable,
-        y0: np.ndarray,
-        t_span: list,
-        partition: Partition,
-        k: Callable[[float], np.ndarray],
-        N: np.ndarray,
-        kinetic_order_matrix: np.ndarray,
-        rng: np.random.Generator,
-        events: list[Callable[[np.ndarray], float]],
-        simulation_options: SimulationOptions,
-        t_eval: np.ndarray = None,
-        ) -> StepUpdate:
-    """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs.
-
-    Args:
-        y0 (np.ndarray): initial state.
-        t_span (list): [t0, t_upper_limit].
-        partition (Partition): partition.stochastic and partition.deterministic are masks for pathways.
-        k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or a list of unchanging rate constants.
-        N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        kinetic_order_matrix (np.ndarray): A_ij = kinetic order for species i in reaction j.
-        rng (np.random.Generator)
-        events (list[Callable[[np.ndarray], float]]): a list of continuous functions of the state that have a 0 when an event of interest occurs.
-        simulation_options (SimulationOptions): configuration of the simulation.
-
-    Returns:
-        StepUpdate: update object:
-            update.t: time at end of step,
-            update.y: state at end of step,
-            update.status: -1 if integration error, 0 if upper limit, 1 if stoch event, 2 if other event,
-            update.nfev: number of evaluations of derivative.
-    """
-
-    # not really a hitting *time* as this is a dimensionless quantity,
-    # a random number drawn from the unit exponential distribution.
-    # when the integral of the stochastic rates == hitting_point, an event occurs
-    hitting_point = rng.exponential(1)
-
-    event_type_cutoffs = []
-    event_types = []
-
-    extra_events = events
-    # if we approximate the stochastic propensities as constant between events,
-    # we know the exact hitting time, otherwise we have to stop at an event
-    if simulation_options.approximate_rtot:
-        events = []
-        t_span = t_span.copy()
-        true_upper_limit = t_span[-1]
-        total_stochastic_event_rate = np.sum(calculate_propensities(y0, k, t_span[0])[partition.stochastic]) + simulation_options.contrived_no_reaction_rate
-        hitting_time = t_span[0] + hitting_point / total_stochastic_event_rate
-        if hitting_time < true_upper_limit:
-            t_span[-1] = hitting_time
-    else:
-        # a continuous event function that will record 0 when the hitting point is reached
-        events = [stochastic_event_finder]
-        event_type_cutoffs = [0]
-        event_types = [StepStatus.stochastic_event]
-
-    if simulation_options.halt_on_partition_change:
-        partition_change_finder = partition_change_finder_factory(simulation_options.partition_fraction_for_halt)
-        events.append(partition_change_finder)
-        event_type_cutoffs.append(kinetic_order_matrix.shape[1])
-        event_types.append(StepStatus.partition_change)
-
-    if len(extra_events) > 0:
-        events.extend(extra_events)
-        event_type_cutoffs.append(len(events)-1)
-        event_types.append(StepStatus.extra_event)
-    # all our events should be terminal
-    for e in events:
-        assert e.terminal
-
-    # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
-    y0_expanded = np.zeros(len(y0)+1)
-    y0_expanded[:-1] = y0
-
-    # integrate until hitting or until t_max
-    step_solved = solve_ivp(dydt, t_span, y0_expanded, events=events, args=(k, partition, calculate_propensities, hitting_point), t_eval=t_eval)
-    ivp_step_status = step_solved.status
-
-    # if we use t_eval, we will sometimes have no points returned except in events
-    if len(step_solved.y) > 0:
-        # slice to -1 to the integral of the rates, which is slotted into the last entry of y
-        y_all = step_solved.y[:-1,:]
-        y_last = y_all[:,-1]
-        t_last = step_solved.t[-1]
-    else:
-        y_all = []
-        y_last = []
-        t_last = []
-
-    # this branching logic tells us what caused integration to stop
-    # and calculates t and y at the stopping spot
-    if ivp_step_status == -1:
-        status = StepStatus.failure
-        #print(step_solved)
-        assert False, "integration step failed"
-    elif ivp_step_status == 0:
-        # if we are approximating the stochastic rates as constant between events, then hitting the upper limit
-        # corresponds to a stochastic event, unless the upper limit is also the true end of the integration
-        if simulation_options.approximate_rtot and true_upper_limit > t_span[-1]:
-            status = StepStatus.stochastic_event
-            for t_event in step_solved.t_events:
-                assert(len(t_event) == 0)
-            t, y = t_last, y_last
-        else:
-            status = StepStatus.t_end
-    else:
-        # if we reach here, an event has occured
-        assert ivp_step_status == 1
-        # ensure that our expectations are met: 1 event of 1 kind, because we insist on terminal events
-        t, y, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
-        # drop expanded term for sum of rates
-        y = y[:-1]
-        # use the event_index to find out what our status is (answer, what kind of event was this?)
-        #print(event_type_cutoffs, event_types)
-        for cutoff, event_status in zip(event_type_cutoffs, event_types):
-            if event_index <= cutoff:
-                status = event_status
-                break
-        else: # nobreak
-            assert False, f"Couldn't assign a status to event. Event index = {event_index}. event_cutoffs={event_type_cutoffs}. event_types={event_types}."
-        #print("EVENT INDEX:", event_index, "STATUS:", status)
-
-    if status == StepStatus.partition_change:
-        print(f"Stopping for partition change. t={t}")
-
-    # if we reached the true upper limit of integration simply return the current values of t and y
-    if status == StepStatus.t_end:
-        y_last = round_with_method(y_last, simulation_options.round_randomly, rng)
-        return StepUpdate(t_last, y_last, status, step_solved.nfev, step_solved.t, y_all)
-    assert StepStatus.event_like(status)
-
-    # round
-    y = round_with_method(y, simulation_options.round_randomly, rng)
-
-    # if the event isn't a stochastic event, then we were halting to reassess partition
-    # so: we simply return the state of the system at the time of our event
-    if not status == StepStatus.stochastic_event:
-        return StepUpdate(t, y, status, step_solved.nfev, step_solved.t, y_all)
-    assert status == StepStatus.stochastic_event
-    #import pdb; pdb.set_trace()
-    # if the event was a stochastic event, cause it to happen
-    # first by determining which event happened
-    endpoint_propensities = calculate_propensities(y, k, t)
-
-    # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
-    # I think we want to use starting partition but endpoint propensities!
-
-    valid_selections = endpoint_propensities * partition.stochastic
-    # if we have a contrived rate of no reaction, insert it into our array of transition probabilities as the last element
-    if simulation_options.approximate_rtot:
-        valid_selections = np.hstack([valid_selections, np.array([simulation_options.contrived_no_reaction_rate])])
-
-    # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
-    selection_sum = valid_selections.sum()
-    assert selection_sum != 0.
-    valid_selections /= selection_sum
-    valid_selections = valid_selections.cumsum()
-
-    # the first entry that is greater than a random float is our event choice
-    pathway_rand = rng.random()
-    #print(valid_selections > pathway_rand)
-    entry = np.argmax(valid_selections > pathway_rand)
-    path_index = np.unravel_index(entry, valid_selections.shape)
-
-    # don't apply any update if our selection was the contrived rate of no reaction
-    #print(np.squeeze(path_index), valid_selections, valid_selections.shape, len(valid_selections))
-    if simulation_options.approximate_rtot and np.squeeze(path_index) == len(valid_selections)-1:
-        return StepUpdate(t,y,StepStatus.contrived_no_reaction, step_solved.nfev, step_solved.t, y_all)
-
-    # N_ij = net change in i after unit progress in reaction j
-    # so the appropriate column of the stoich matrix tells us how to do our update
-    update = np.transpose(N[:,path_index])
-    update = update.reshape(y.shape)
-    y += update
-    #print("stochastic event index", path_index, "update", update)
-    #print(y)
-    return StepUpdate(t,y,status,step_solved.nfev, step_solved.t, y_all)
-
-def forward_time(y0: np.ndarray, t_span: list[float], k: Callable[[float], np.ndarray], N: np.ndarray, kinetic_order_matrix: np.ndarray, rng: np.random.Generator, partition_function: Callable[[np.ndarray, np.ndarray], Partition] = None, t_eval=None, discontinuities=[], events=[], expert_dydt_factory=None, **kwargs) -> SimulationResult:
-    """Evolve system of irreversible reactions forward in time using hybrid deterministic-stochastic approximation.
-
-    Args:
-        y0 (np.ndarray): initial state of the system.
-        t_span (list[float]): [t_0, t_end].
-        k (f: float -> np.ndarray or np.ndarray): either a callable that gives rate constants at time t or an array of unchanging rate constants.
-        N (np.ndarray): the stoichiometry matrix for the system. N_ij = net change in i after unit progress in reaction j.
-        kinetic_order_matrix (np.ndarray): A_ij = kinetic intensity (usually: how many times it appears as a reactant) for species i in reaction j.
-        rng (np.random.Generator): rng to use for stochastic simulation (and rounding).
-        partition_function (Callable[[np.ndarray, np.ndarray], Partition]): function that takes (y, propensities) at time t and outputs a partition of the system. Optional, but will give error if not specified.
-        t_eval (array_like or None): Times at which to store the computed solution, must be sorted and lie within t_span. If None (default), use points selected by the solver.
-        discontinuities (list[float], optional): a list of time points where k(t) is discontinuous. Defaults to [].
-        events (list[Callable[[np.ndarray], float]], optional): a list of continuous functions of the state that have a 0 when an event of interest occurs. Defaults to [].
-        expert_dydt_factory (Callable[[Callable], Callable]): a function that takes the propensity calculator and returns dydt. This interface is useful if through expert knowledge of the system, you can provide a faster calculation of the derivative than the matrix multiplication rates = N @ deterministic_propensities. Defaults to None.
-        **kwargs (SimulationOptions): configuration of the simulation. Defaults to SimulationOptions().
-
-    Returns:
-        SimulationResult: simulation result object:
-            result.t: t_end, should be close to t_span[-1],
-            result.y: system state at t_end,
-            result.n_stochastic: number of stochastic events that occured,
-            result.nfev: number of evaluations of the derivative.
-            result.halt_counter: Counter object of the status of all integration halts.
-            result.t_history: every time point evaluated.
-            result.y_history: state of the system at each point in t_history.
-
-    """
-    assert N.shape[0] == kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
-    assert N.shape[1] == kinetic_order_matrix.shape[1], "N and kinetic_order_matrix should have # columns == # of reaction pathways"
-
-    if isinstance(k, str):
-        raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
-    if partition_function is None:
-        raise TypeError("partition function must be specified.")
-    simulation_options = SimulationOptions(**kwargs)
-    if simulation_options.jit:
-        calculate_propensities = jit_calculate_propensities_factory(kinetic_order_matrix.astype(np.float64), isinstance(k, np.ndarray))
-    else:
-        calculate_propensities = calculate_propensities_factory(kinetic_order_matrix)
-
-    if expert_dydt_factory is None:
-        if simulation_options.jit:
-            dydt = jit_dydt_factory(N.astype(np.float64))
-        else:
-            dydt = dydt_factory(N)
-    else:
-        dydt = expert_dydt_factory(N.astype(np.float64))
-        if simulation_options.jit:
-            from numba.core.registry import CPUDispatcher
-            assert(isinstance(dydt, CPUDispatcher))
-
-    discontinuities = np.sort(np.array(discontinuities))
-    # ignore a discontinuity at 0
-    if len(discontinuities) > 0 and discontinuities[0] == 0:
-        discontinuities = discontinuities[1:]
-    n_stochastic = 0
-    nfev = 0
-    halt_counter = Counter()
-    t0, t_end = t_span
-    t_eval = np.asarray(t_eval) if t_eval is not None else None
-    t = t0
-    y = y0
-
-    history_length = int(1e6)
-    t_history = np.zeros(history_length)
-    y_history = np.zeros((len(y), history_length))
-    history_index = 0
-
-    next_discontinuity_index = 0
-    discontinuity_surgery_flag = False
-    while t < t_end:
-        if discontinuity_surgery_flag and t < discontinuities[next_discontinuity_index-1]:
-            discontinuity_surgery_flag = False
-            print(f"Jumping from {t} to {np.nextafter(discontinuities[next_discontinuity_index-1], t_end)} to avoid discontinuity")
-            t = np.nextafter(discontinuities[next_discontinuity_index-1], t_end)
-
-        propensities = calculate_propensities(y, k, t)
-        partition = partition_function(y, propensities)
-
-        if next_discontinuity_index < len(discontinuities):
-            # a double less than the discontinuity --- we don't want to "look ahead" to the point of the discontinuity
-            upper_limit = np.nextafter(discontinuities[next_discontinuity_index], t0)
-            if upper_limit == discontinuities[next_discontinuity_index]:
-                import pdb; pdb.set_trace()
-        else:
-            upper_limit = t_end
-
-        if t_eval is not None:
-            relevant_t_eval = t_eval[(t_eval > t) & (t_eval < upper_limit)]
-            relevant_t_eval = list(relevant_t_eval)
-            relevant_t_eval.append(upper_limit)
-        else:
-            relevant_t_eval = None
-
-        step_update = hybrid_step(calculate_propensities, dydt, y, [t, upper_limit], partition, k, N, kinetic_order_matrix, rng, events, simulation_options, t_eval=relevant_t_eval)
-
-        t = step_update.t
-        y = step_update.y
-        halt_counter.update({step_update.status:1})
-        if step_update.status == StepStatus.stochastic_event:
-            n_stochastic += 1
-        elif step_update.status == StepStatus.t_end:
-            discontinuity_surgery_flag = True
-            next_discontinuity_index += 1
-        nfev += step_update.nfev
-
-        n_samples = len(step_update.t_history)
-        t_history[history_index:history_index+n_samples] = step_update.t_history
-        y_history[:, history_index:history_index+n_samples] = step_update.y_history
-        history_index += n_samples
-
-    # truncate histories
-    t_history = t_history[:history_index]
-    y_history = y_history[:, :history_index]
-    return SimulationResult(t,y,n_stochastic,nfev,halt_counter,t_history,y_history)

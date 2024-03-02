@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Callable, NamedTuple
-from numba import jit
+from numba import jit as numbajit
 from scipy.integrate import quad
 from scipy.optimize import fsolve
 
@@ -71,7 +71,6 @@ def gillespie_step(t, y, t_end, N, propensity_function, rng, t_eval):
 
 def homogeneous_gillespie_step(t, y, t_end, N, propensity_function, rng, t_eval):
     propensities = propensity_function(t, y)
-    print("y", y)
     total_propensity = np.sum(propensities)
     time_proposal = find_hitting_time_homogeneous(propensities, total_propensity, rng)
     hitting_time, propensities, total_propensity = time_proposal
@@ -92,9 +91,10 @@ class GillespieSimulator(Simulator):
         else:
             return homogeneous_gillespie_step(t, y, t_end, self.N, self.propensity_function, rng, t_eval)
     
-    def construct_propensity_function(self, k, kinetic_order_matrix):
-        inhomogeneous = self.inhomogeneous
-        @jit(nopython=True)
+    @classmethod
+    def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
+        assert jit
+        @numbajit(nopython=True)
         def jit_calculate_propensities(t, y):
             # Remember, we want total number of distinct combinations * k === rate.
             # we want to calculate (y_i rate_involvement_ij) (binomial coefficient)

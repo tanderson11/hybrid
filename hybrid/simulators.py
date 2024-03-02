@@ -3,6 +3,8 @@ from numpy.typing import ArrayLike
 from typing import Callable, NamedTuple
 from enum import IntEnum
 from collections import Counter
+from dataclasses import dataclass
+from abc import ABC, abstractmethod, abstractclassmethod
 
 class StepStatus(IntEnum):
     # simulators will subclass this to introduce other statuses.
@@ -11,6 +13,7 @@ class StepStatus(IntEnum):
 
 class Run():
     def __init__(self, t0, y0, history_length=1e6) -> None:
+        y0 = np.asarray(y0)
         history_length = int(history_length)
         self.history_index = 0
         
@@ -40,7 +43,6 @@ class Run():
         self.t_history[self.history_index+1:self.history_index+n_samples+1] = step.t_history
         self.y_history[:, self.history_index+1:self.history_index+n_samples+1] = step.y_history
         self.history_index += n_samples
-        print(self.get_t(), self.history_index)
         return self.get_t()
 
     def get_history(self):
@@ -48,7 +50,8 @@ class Run():
         y_history = self.y_history[:,:self.history_index+1]
         return History(self.get_t(), self.get_y(), t_history, y_history, self.status_counter)
 
-class History(NamedTuple):
+@dataclass(frozen=True)
+class History():
     t: float
     y: ArrayLike
     t_history: ArrayLike
@@ -60,9 +63,9 @@ class Step(NamedTuple):
     y_history: ArrayLike
     status: StepStatus
 
-class Simulator():
+class Simulator(ABC):
     run_klass = Run
-    def __init__(self, k, N, kinetic_order_matrix, propensity_function=None) -> None:
+    def __init__(self, k, N, kinetic_order_matrix, jit=True, propensity_function=None) -> None:
         inhomogeneous = isinstance(k, Callable)
         if not inhomogeneous:
             k = np.asarray(k, dtype=float)
@@ -74,15 +77,22 @@ class Simulator():
         self.k = k
         self.N = N
         self.kinetic_order_matrix = kinetic_order_matrix
+
+        self.jit = jit
         if propensity_function is not None:
             self.propensity_function = propensity_function
+            if jit:
+                from numba.core.registry import CPUDispatcher
+                assert(isinstance(propensity_function, CPUDispatcher))
         else:
-            self.propensity_function = self.construct_propensity_function(k, kinetic_order_matrix)
+            self.propensity_function = self.construct_propensity_function(k, kinetic_order_matrix, inhomogeneous, jit=jit)
+
 
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0)
 
-    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None):
+    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, **step_kwargs):
+        y0 = np.asarray(y0)
         assert self.N.shape[0] == self.kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
         assert len(t_span) == 2
         t0, t_end = t_span
@@ -93,11 +103,18 @@ class Simulator():
 
         t = t0
         while t < t_end:
-            step = self.step(*run.current_state(), t_end, rng, t_eval)
+            step = self.step(*run.current_state(), t_end, rng, t_eval, **step_kwargs)
             t = run.handle_step(step)
-            #break
 
         return run.get_history()
+
+    @abstractmethod
+    def step(self, t, y, t_end, rng, t_eval):
+        ...
+
+    @abstractclassmethod
+    def construct_propensity_function(cls, k, kinetic_order_matrix, jit=True):
+        ...
 
 class HybridSimulator(Simulator):
     pass
