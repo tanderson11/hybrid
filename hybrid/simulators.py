@@ -75,7 +75,7 @@ class Simulator(ABC):
         assert N.shape[1] == kinetic_order_matrix.shape[1], "N and kinetic_order_matrix should have # columns == # of reaction pathways"
 
         self.k = k
-        self.N = N
+        self.N = N.astype(float)
         self.kinetic_order_matrix = kinetic_order_matrix
 
         self.jit = jit

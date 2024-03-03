@@ -1,10 +1,10 @@
 import numpy as np
 from numpy.typing import ArrayLike
+from typing import Callable
 from scipy.integrate import solve_ivp
 from typing import NamedTuple
 from dataclasses import dataclass
 from enum import auto
-from typing import Callable
 from numba import jit
 import json
 from collections import Counter
@@ -18,7 +18,7 @@ class HybridStepStatus(StepStatus):
     t_end_for_discontinuity = auto()
     partition_change = auto()
     contrived_no_reaction = auto()
-    extra_event = auto()
+    user_event = auto()
 
     def event_like(self):
         return self > HybridStepStatus.t_end
@@ -181,7 +181,7 @@ class HybridSimulator(Simulator):
 
         event_type_cutoffs = []
         event_types = []
-        extra_events = events
+        user_events = events
         # if we approximate the stochastic propensities as constant between events,
         # we know the exact hitting time, otherwise we have to stop at an event
         if self.simulation_options.approximate_rtot:
@@ -205,10 +205,10 @@ class HybridSimulator(Simulator):
             event_type_cutoffs.append(self.kinetic_order_matrix.shape[1])
             event_types.append(HybridStepStatus.partition_change)
 
-        if len(extra_events) > 0:
-            events.extend(extra_events)
+        if len(user_events) > 0:
+            events.extend(user_events)
             event_type_cutoffs.append(len(events)-1)
-            event_types.append(HybridStepStatus.extra_event)
+            event_types.append(HybridStepStatus.user_event)
         # all our events should be terminal
         for e in events:
             assert e.terminal
@@ -277,7 +277,7 @@ class HybridSimulator(Simulator):
                 assert False, f"Couldn't assign a status to event. Event index = {event_index}. event_cutoffs={event_type_cutoffs}. event_types={event_types}."
 
         if status == HybridStepStatus.partition_change:
-            print(f"Stopping for partition change. t={t}")
+            print(f"Stopping for partition change. t={t_event}")
 
         # round the species quantities at our final time point
         y_history[:, -1] = round_with_method(y_history[:, -1], self.simulation_options.round_randomly, rng)
@@ -371,7 +371,6 @@ class SimulationOptions():
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
             This avoids numerical instability around the threshold. Defaults to 0.9
     """
-    jit: bool = True
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
     deqs: bool = True

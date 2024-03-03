@@ -1,16 +1,9 @@
 import numpy as np
-from typing import NamedTuple
-from dataclasses import dataclass
-from enum import IntEnum
-from typing import Callable
 import hybrid.hybrid as hybrid
 from statsmodels.stats import proportion
 import unittest
 from numba import jit, float64
 from numba.types import Array
-from itertools import combinations
-import sys
-import gc
 
 def get_k_one_species(birth_rate, death_rate):
     @jit(Array(float64, 1, "C")(float64), nopython=True)
@@ -24,10 +17,10 @@ def get_k_two_species(birth_rate, death_rate):
         return np.array([1.1, 1.0, birth_rate, death_rate]).astype(float64)
     return k
 
-N_one_species = np.array([[1,-1]])
+N_one_species = np.array([[1,-1]], dtype=float)
 rate_involvement_one_species = np.array([[1,1]])
 
-N_two_species = np.array([[1,-1,0,0],[0,0,1,-1]])
+N_two_species = np.array([[1,-1,0,0],[0,0,1,-1]], dtype=float)
 rate_involvement_two_species = np.array([[1,1,0,0],[0,0,1,1]])
 
 class BirthDeathTest(unittest.TestCase):
@@ -98,8 +91,9 @@ class BirthDeathTest(unittest.TestCase):
         k = get_k(birth_rate, death_rate)
 
         extinctions = 0
+        simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
         for i in range(self.n):
-            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
+            result = simulator.simulate(t_span, y0, rng)
             extinctions += result.y[-1] == 0.0
             del result
             if i % 100 == 0:

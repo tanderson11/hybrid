@@ -20,18 +20,16 @@ class PartitionBreakTests(unittest.TestCase):
             'partition_function': hybrid.FixedThresholdPartitioner(threshold).partition_function
         }
 
+        simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
+
         y_ends = []
-        for i in range(1):
-            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
+        for i in range(20):
+            result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         
         print(y_ends)
         print(np.var(y_ends))
 
-        #plt.plot(result.t_history, result.y_history[0,:].T)
-        #plt.title("Decline")
-        #plt.axhline(y=100, color='r', linestyle='-')
-        #plt.show()
         self.assertGreater(np.var(y_ends), 0)
 
     def test_birth_death_regime_change(self):
@@ -50,9 +48,11 @@ class PartitionBreakTests(unittest.TestCase):
             'partition_function': hybrid.FixedThresholdPartitioner(threshold).partition_function
         }
 
+        simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
+
         y_ends = []
-        for i in range(4):
-            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
+        for i in range(20):
+            result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         
         print(y_ends)
@@ -83,9 +83,11 @@ class PartitionBreakTests(unittest.TestCase):
             'halt_on_partition_change': False,
         }
 
+        simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
+
         y_ends = []
-        for i in range(1):
-            result = hybrid.forward_time(y0, t_span, k, N, kinetic_order_matrix, rng, **options)
+        for i in range(20):
+            result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         
         print(y_ends)
