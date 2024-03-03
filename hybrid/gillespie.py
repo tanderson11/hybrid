@@ -122,37 +122,3 @@ class GillespieSimulator(Simulator):
                 product_down_columns = product_down_columns * intensity_power[i]
             return product_down_columns * k_of_t
         return jit_calculate_propensities
-
-class SimulationResult(NamedTuple):
-    t: float
-    y: np.ndarray
-    t_history: np.ndarray
-    y_history: np.ndarray
-    n_stochastic: int
-
-def forward_time(y0: np.ndarray, t_span: list[float], k: np.ndarray, N: np.ndarray, kinetic_order_matrix: np.ndarray, rng: np.random.Generator, **kwargs):
-    calculate_propensities = jit_calculate_propensities_factory(kinetic_order_matrix)
-
-    t,t_end = t_span
-    y = y0
-
-    history_length = int(1e6)
-    t_history = np.zeros(history_length)
-    y_history = np.zeros((len(y), history_length))
-    history_index = 0
-    n_stochastic = 0
-    while t < t_end:
-        step_update = homogeneous_gillespie_step(y, k, t, t_end, N, calculate_propensities, rng)
-        t += step_update.t_update
-        y += step_update.y_update
-
-        t_history[history_index] = t
-        y_history[:, history_index] = y
-        history_index += 1
-        n_stochastic += step_update.was_stochastic_event
-
-    t_history = t_history[:history_index]
-    y_history = y_history[:,:history_index]
-
-    return SimulationResult(t_history[-1], y_history[:, -1], t_history, y_history, n_stochastic)
-
