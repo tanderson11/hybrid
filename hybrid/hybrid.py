@@ -9,7 +9,7 @@ from numba import jit
 import json
 from collections import Counter
 
-from .simulators import Simulator, StepStatus
+from .simulator import Simulator, StepStatus
 
 class HybridStepStatus(StepStatus):
     failure = -1

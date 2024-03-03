@@ -4,7 +4,7 @@ from numba import jit as numbajit
 from scipy.integrate import quad
 from scipy.optimize import fsolve
 
-from .simulators import Step, StepStatus, Simulator
+from .simulator import Step, StepStatus, Simulator
 
 class GillespieStepStatus(StepStatus):
     rejected = -1
