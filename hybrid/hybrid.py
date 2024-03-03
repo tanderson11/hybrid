@@ -30,13 +30,12 @@ class StepUpdate(NamedTuple):
     nfev: int
 
 class HybridSimulator(Simulator):
-    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=None, jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
+    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=[], jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
         self.partition_function = partition_function
         self.discontinuities = discontinuities
-        self.next_discontinuity_index = 0 if discontinuities is not None else None
         self.simulation_options = SimulationOptions(**kwargs)
         if dydt_function is None:
             self.dydt = self.construct_dydt_function(N, jit)
@@ -163,15 +162,19 @@ class HybridSimulator(Simulator):
         t_span = [t, t_end]
 
         discontinuity_flag = False
-        if self.next_discontinuity_index is None:
+
+        discontinuity_mask = np.asarray(self.discontinuities) <= t
+        discontinuity_index = np.argmin(discontinuity_mask)
+        # (no discontinuities) or (all discontinuities passed)
+        if len(self.discontinuities) == 0 or discontinuity_mask[discontinuity_index]:
             next_discontinuity = np.inf
         else:
-            if self.next_discontinuity_index < len(self.discontinuities):
-                next_discontinuity = self.discontinuities[self.next_discontinuity_index]
+            next_discontinuity = self.discontinuities[discontinuity_index]
 
         if next_discontinuity < t_end:
             discontinuity_flag = True
             # integrate only until the last float before the discontinuity
+            #print(f"Reducing t_end {t_span[-1]} => {np.nextafter(next_discontinuity, t)}. Discontinuity_index={discontinuity_index}")
             t_span[-1] = np.nextafter(next_discontinuity, t)
 
         # not really a hitting *time* as this is a dimensionless quantity,
@@ -188,7 +191,8 @@ class HybridSimulator(Simulator):
             events = []
             total_stochastic_event_rate = np.sum(starting_propensities[partition.stochastic]) + self.simulation_options.contrived_no_reaction_rate
             hitting_time = t + hitting_point / total_stochastic_event_rate
-            if hitting_time < t_end:
+            if hitting_time < t_span[-1]:
+                #print(f"Removing discontinuity flag: t_end {t_span[-1]} => {hitting_time}")
                 t_span[-1] = hitting_time
                 # if discontinuity_flag was set, the upper limit was a discontinuity
                 # but now that we've lowered the upper limit, that is no longer the case
@@ -247,7 +251,7 @@ class HybridSimulator(Simulator):
         elif ivp_step_status == 0:
             # if we are approximating the stochastic rates as constant between events, then hitting the upper limit
             # corresponds to a stochastic event, unless the upper limit is also the true end of the integration
-            if self.simulation_options.approximate_rtot and t_end > t_span[-1]:
+            if not discontinuity_flag and self.simulation_options.approximate_rtot and t_end > t_span[-1]:
                 status = HybridStepStatus.stochastic_event
                 for t_event in step_solved.t_events:
                     assert(len(t_event) == 0)
@@ -260,7 +264,7 @@ class HybridSimulator(Simulator):
             t_event, y_event, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
             # drop expanded term for sum of rates
             y_event = y_event[:-1]
-            
+
             # add event state to our history if its absent
             # it might be absent if t_eval is set
             if t_event != t_history[-1]:
@@ -288,10 +292,9 @@ class HybridSimulator(Simulator):
                 status = HybridStepStatus.t_end_for_discontinuity
                 print(f"Doing surgery to avoid discontinuity: skipping from {t_history[-1]} to {np.nextafter(next_discontinuity, t_end)}")
                 t_history[-1] = np.nextafter(next_discontinuity, t_end)
-                self.next_discontinuity_index += 1
             ## FIRST RETURN
             return StepUpdate(t_history, y_history, status, step_solved.nfev)
-        
+
         assert HybridStepStatus.event_like(status)
 
         # if the event isn't a stochastic event, then we were halting to reassess partition
