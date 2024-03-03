@@ -39,7 +39,7 @@ class HybridSimulator(Simulator):
         self.next_discontinuity_index = 0 if discontinuities is not None else None
         self.simulation_options = SimulationOptions(**kwargs)
         if dydt_function is None:
-            self.dydt = self.construct_dydt_function(N, self.propensity_function, jit)
+            self.dydt = self.construct_dydt_function(N, jit)
         else:
             self.dydt = dydt_function
             if self.jit:
@@ -47,13 +47,13 @@ class HybridSimulator(Simulator):
                 assert(isinstance(propensity_function, CPUDispatcher))
 
     @classmethod
-    def construct_dydt_function(cls, N, propensity_function, jit=True):
+    def construct_dydt_function(cls, N, jit=True):
         if jit:
-            return cls.jit_dydt_factory(N, propensity_function)
-        return cls.dydt_factory(N, propensity_function)
+            return cls.jit_dydt_factory(N)
+        return cls.dydt_factory(N)
 
     @staticmethod
-    def jit_dydt_factory(N, propensity_function):
+    def jit_dydt_factory(N):
         @jit(nopython=True)
         def jit_dydt(t, y_expanded, deterministic_mask, stochastic_mask, propensity_function, hitting_point):
             # by fiat the last entry of y will carry the integral of stochastic rates
@@ -80,7 +80,7 @@ class HybridSimulator(Simulator):
         return wrapper
 
     @staticmethod
-    def dydt_factory(N, propensity_function):
+    def dydt_factory(N):
         def dydt(t, y_expanded, partition, propensity_function, hitting_point):
             # by fiat the last entry of y will carry the integral of stochastic rates
             y = y_expanded[:-1]
@@ -288,6 +288,7 @@ class HybridSimulator(Simulator):
                 status = HybridStepStatus.t_end_for_discontinuity
                 print(f"Doing surgery to avoid discontinuity: skipping from {t_history[-1]} to {np.nextafter(next_discontinuity, t_end)}")
                 t_history[-1] = np.nextafter(next_discontinuity, t_end)
+                self.next_discontinuity_index += 1
             ## FIRST RETURN
             return StepUpdate(t_history, y_history, status, step_solved.nfev)
         
@@ -421,7 +422,6 @@ class FixedThresholdPartitioner(PartitionScheme):
     def partition_function(self, y, propensities):
         stochastic = (propensities <= self.threshold) & (propensities != 0)
         return Partition(~stochastic, stochastic, np.full_like(propensities, self.threshold))
-
 
 SCHEMES_BY_NAME = {
     'FixedThresholdPartitioner': FixedThresholdPartitioner
