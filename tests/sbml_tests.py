@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import reactionmodel.load
-from hybrid.simulators import SIMULATORS
+from hybrid.simulate import SIMULATORS
 import hybrid.hybrid as hybrid
 
 # wherever we are, save test output to test_output folder
@@ -156,7 +156,7 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
     def do_simulations(self, targets, desired_species):
         aligned_results = []
         simulator = self.specification.simulator
-        forward_time = SIMULATORS[simulator]
+        simulator_klass = SIMULATORS[simulator]
         rng = np.random.default_rng()
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
         simulation_options = self.specification.simulation_options.copy()
@@ -166,9 +166,11 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
             partition_scheme = hybrid.load_partition_scheme(partition_path)
             simulation_options['partition_function'] = partition_scheme.partition_function
         k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
+        simulator = simulator_klass(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
+
         for i in range(self.n):
             print(i)
-            result = forward_time(initial_condition, self.TEST_ARGUMENTS.t_span, k, self.specification.model.stoichiometry(), self.specification.model.rate_involvement(), rng, discontinuities=self.TEST_ARGUMENTS.t_eval, **simulation_options)
+            result = simulator.simulate(self.TEST_ARGUMENTS.t_span, initial_condition, rng, t_eval=self.TEST_ARGUMENTS.t_eval, **simulation_options)
             aligned = self.align_single_result(result, self.check_data['time'], targets, desired_species)
             aligned_results.append(aligned)
         return aligned_results

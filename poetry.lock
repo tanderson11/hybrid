@@ -405,7 +405,7 @@ files = [
 name = "clusteval"
 version = "2.2.1"
 description = "clusteval is a python package for unsupervised cluster validation."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -440,7 +440,7 @@ files = [
 name = "colourmap"
 version = "1.1.16"
 description = "Python package colourmap generates an N unique colors from the specified input colormap."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -554,7 +554,7 @@ tests = ["pytest", "pytest-cov", "pytest-xdist"]
 name = "d3heatmap"
 version = "0.2.3"
 description = "Python package to create interactive heatmap based on d3js."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -572,7 +572,7 @@ pandas = "*"
 name = "datazets"
 version = "0.1.9"
 description = "Datazets is a python package to import well known example data sets."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -690,7 +690,7 @@ devel = ["colorama", "json-spec", "jsonschema", "pylint", "pytest", "pytest-benc
 name = "flameplot"
 version = "1.1.0"
 description = "flameplot is a python package for the quantification of local similarity across two maps or embeddings."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -711,7 +711,7 @@ tqdm = "*"
 name = "flameprof"
 version = "0.4"
 description = "cProfile flamegraph generator"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 files = [
@@ -871,7 +871,7 @@ files = [
 name = "imagesc"
 version = "0.3.0"
 description = "imagesc is an Python package to create heatmaps in a easy way."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -1035,7 +1035,7 @@ test = ["ipykernel", "jsonschema", "pytest (>=3.6.0)", "pytest-cov", "pytz"]
 name = "ismember"
 version = "1.0.2"
 description = "Python package ismember returns array elements that are members of set array."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -1103,7 +1103,7 @@ i18n = ["Babel (>=2.7)"]
 name = "joblib"
 version = "1.3.2"
 description = "Lightweight pipelining with Python functions"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -1377,7 +1377,7 @@ test = ["jupyter-server (>=2.0.0)", "pytest (>=7.0)", "pytest-jupyter[server] (>
 name = "jupyterflame"
 version = "0.0.1"
 description = "Brings flamegraphs into jupyter notebooks"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 files = []
@@ -1699,7 +1699,7 @@ files = [
 name = "matlabengine"
 version = "9.15.2"
 description = "A module to call MATLAB from Python"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.9, <3.12"
 files = [
@@ -2081,7 +2081,7 @@ files = [
 name = "parameterized"
 version = "0.9.0"
 description = "Parameterized testing with any Python test framework"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -2389,7 +2389,7 @@ diagrams = ["jinja2", "railroad-diagrams"]
 name = "pypickle"
 version = "1.1.0"
 description = "pypickle is to save and load variables in/from pickle files"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -2697,7 +2697,7 @@ simpleeval = "^0.9.13"
 type = "git"
 url = "https://github.com/tanderson11/reactionmodel.git"
 reference = "HEAD"
-resolved_reference = "96db1bd68a30e6591dbe0712864abe6cbead2f8f"
+resolved_reference = "3c8284dcf6d3f994e58606c145c532898fc7bea8"
 
 [[package]]
 name = "referencing"
@@ -2877,7 +2877,7 @@ files = [
 name = "scatterd"
 version = "1.3.7"
 description = "scatterd is an easy and fast way of creating scatter plots."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
@@ -2896,7 +2896,7 @@ seaborn = "*"
 name = "scikit-learn"
 version = "1.4.1.post1"
 description = "A set of python modules for machine learning and data mining"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.9"
 files = [
@@ -2962,7 +2962,7 @@ url = "scipy-1.13.0.dev0-cp39-cp39-macosx_12_0_arm64.whl"
 name = "seaborn"
 version = "0.13.2"
 description = "Statistical data visualization"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.8"
 files = [
@@ -3145,7 +3145,7 @@ typing = ["mypy (>=1.6,<2.0)", "traitlets (>=5.11.1)"]
 name = "threadpoolctl"
 version = "3.3.0"
 description = "threadpoolctl"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.8"
 files = [
@@ -3209,7 +3209,7 @@ files = [
 name = "tqdm"
 version = "4.66.2"
 description = "Fast, Extensible Progress Meter"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -3399,4 +3399,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "24597db3b1c23d99df3e2033f65f5d5d7db91a781617e24242383c4ed0c199a0"
+content-hash = "e80f03726b010fd052ceb65e385eace43a24697beadeab8c5b2057e08fa25885"

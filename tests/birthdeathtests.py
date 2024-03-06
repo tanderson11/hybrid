@@ -18,16 +18,16 @@ def get_k_two_species(birth_rate, death_rate):
     return k
 
 N_one_species = np.array([[1,-1]], dtype=float)
-rate_involvement_one_species = np.array([[1,1]])
+kinetic_order_one_species = np.array([[1,1]])
 
 N_two_species = np.array([[1,-1,0,0],[0,0,1,-1]], dtype=float)
-rate_involvement_two_species = np.array([[1,1,0,0],[0,0,1,1]])
+kinetic_order_two_species = np.array([[1,1,0,0],[0,0,1,1]])
 
 class BirthDeathTest(unittest.TestCase):
     n = 10000
     # initial_pop, y0, birth_rate, death_rate, t_span, get_k, N, kinetic_order_matrix, options
-    one_species_configuration = (10, 11, 10, [0, 15.0], get_k_one_species, N_one_species, rate_involvement_one_species)
-    two_species_configuration = (10, 11, 10, [0, 15.0], get_k_two_species, N_two_species, rate_involvement_two_species)
+    one_species_configuration = (10, 11, 10, [0, 15.0], get_k_one_species, N_one_species, kinetic_order_one_species)
+    two_species_configuration = (10, 11, 10, [0, 15.0], get_k_two_species, N_two_species, kinetic_order_two_species)
 
     approximate_options = {
         'jit':True,

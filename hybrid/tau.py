@@ -6,7 +6,7 @@ def jit_calculate_propensities_factory(kinetic_order_matrix):
     @jit(nopython=True)
     def jit_calculate_propensities(y, k, t):
         # Remember, we want total number of distinct combinations * k === rate.
-        # we want to calculate (y_i rate_involvement_ij) (binomial coefficient)
+        # we want to calculate (y_i kinetic_order_ij) (binomial coefficient)
         # for each species i and each reaction j
         # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
         # so we write this little calculator ourselves
