@@ -164,12 +164,16 @@ class HybridSimulator(Simulator):
         discontinuity_flag = False
 
         discontinuity_mask = np.asarray(self.discontinuities) <= t
-        discontinuity_index = np.argmin(discontinuity_mask)
-        # (no discontinuities) or (all discontinuities passed)
-        if len(self.discontinuities) == 0 or discontinuity_mask[discontinuity_index]:
+        # (no discontinuities)
+        if len(self.discontinuities) == 0:
             next_discontinuity = np.inf
         else:
-            next_discontinuity = self.discontinuities[discontinuity_index]
+            discontinuity_index = np.argmin(discontinuity_mask)
+            # (all discontinuities passed because  our mininmum satisfying value is True, so all values are true)
+            if discontinuity_mask[discontinuity_index]:
+                next_discontinuity = np.inf
+            else:
+                next_discontinuity = self.discontinuities[discontinuity_index]
 
         if next_discontinuity < t_end:
             discontinuity_flag = True
@@ -234,7 +238,6 @@ class HybridSimulator(Simulator):
         # integrate until hitting or until t_max
         step_solved = solve_ivp(self.dydt, t_span, y_expanded, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
         ivp_step_status = step_solved.status
-
         t_history = step_solved.t
         # if we use t_eval, we will sometimes have no points returned except in events, so we need to dodge that error in indexing
         if len(step_solved.y) > 0:
@@ -266,10 +269,14 @@ class HybridSimulator(Simulator):
             y_event = y_event[:-1]
 
             # add event state to our history if its absent
-            # it might be absent if t_eval is set
-            if t_event != t_history[-1]:
+            # (it might be absent if t_eval is set)
+            if len(t_history) == 0:
+                t_history = np.array([t_event])
+                y_history = np.expand_dims(y_event, axis=1)
+            elif t_event != t_history[-1]:
                 t_history = np.concatenate([t_history, [t_event]])
-                y_history = np.concatenate([y_history, y_event], axis=1)
+                y_history = np.concatenate([y_history, np.expand_dims(y_event, axis=1)], axis=1)
+
 
             # use the event_index to find out what our status is (answer, what kind of event was this?)
             #print(event_type_cutoffs, event_types)
@@ -407,20 +414,6 @@ class FixedThresholdPartitioner(PartitionScheme):
     def partition_function(self, y, propensities):
         stochastic = (propensities <= self.threshold) & (propensities != 0)
         return Partition(~stochastic, stochastic, np.full_like(propensities, self.threshold))
-
-SCHEMES_BY_NAME = {
-    'FixedThresholdPartitioner': FixedThresholdPartitioner
-}
-
-def partition_scheme_from_dictionary(dictionary):
-    scheme_name = dictionary.pop('name')
-    scheme_class = SCHEMES_BY_NAME[scheme_name]
-    return scheme_class(**dictionary) 
-
-def partition_scheme_from_file(file):
-    with open(file, 'r') as f:
-        dictionary = json.load(f)
-    return partition_scheme_from_dictionary(dictionary)
 
 @dataclass(frozen=True)
 class Partition():
