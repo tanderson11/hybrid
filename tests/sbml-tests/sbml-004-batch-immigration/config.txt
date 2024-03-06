@@ -1,5 +1,0 @@
-Option simulator:
-    value: hybrid.
-
-PathOption partition:
-    path: "./partition.json".

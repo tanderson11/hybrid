@@ -1,5 +1,0 @@
-Parameter alpha:
-    value: 1.0.
-
-Parameter mu:
-    value: 0.2.

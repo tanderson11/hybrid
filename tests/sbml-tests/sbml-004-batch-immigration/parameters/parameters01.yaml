@@ -1,0 +1,3 @@
+parameters:
+  alpha: 1.0
+  mu: 0.2

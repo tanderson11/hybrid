@@ -1,0 +1,5 @@
+simulator_config:
+  simulator: hybrid
+  partition:
+    name: FixedThresholdPartitioner
+    threshold: 100.0

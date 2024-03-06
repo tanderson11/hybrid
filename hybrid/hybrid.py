@@ -372,7 +372,7 @@ class SimulationOptions():
         partition_fraction_for_halt (float, optional):
             float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
-            This avoids numerical instability around the threshold. Defaults to 0.9
+            This avoids numerical instability around the threshold. Defaults to 0.9 (90% of threshold)
     """
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
@@ -390,23 +390,6 @@ class SimulationOptions():
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
-
-@dataclass(frozen=True)
-class SimulationResult():
-    t: float
-    y: np.ndarray
-    n_stochastic: int
-    nfev: int
-    halt_counter: Counter
-    t_history: np.ndarray
-    y_history: np.ndarray
-
-def load_partition_scheme(file):
-    with open(file, 'r') as f:
-        dictionary = json.load(f)
-    scheme_name = dictionary.pop('name')
-    scheme_class = SCHEMES_BY_NAME[scheme_name]
-    return scheme_class(**dictionary)
 
 @dataclass
 class PartitionScheme():
@@ -428,6 +411,16 @@ class FixedThresholdPartitioner(PartitionScheme):
 SCHEMES_BY_NAME = {
     'FixedThresholdPartitioner': FixedThresholdPartitioner
 }
+
+def partition_scheme_from_dictionary(dictionary):
+    scheme_name = dictionary.pop('name')
+    scheme_class = SCHEMES_BY_NAME[scheme_name]
+    return scheme_class(**dictionary) 
+
+def partition_scheme_from_file(file):
+    with open(file, 'r') as f:
+        dictionary = json.load(f)
+    return partition_scheme_from_dictionary(dictionary)
 
 @dataclass(frozen=True)
 class Partition():

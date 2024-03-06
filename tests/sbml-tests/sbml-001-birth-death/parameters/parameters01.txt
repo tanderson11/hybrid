@@ -1,5 +1,0 @@
-Parameter Lambda:
-    value: 0.1.
-
-Parameter mu:
-    value: 0.11.

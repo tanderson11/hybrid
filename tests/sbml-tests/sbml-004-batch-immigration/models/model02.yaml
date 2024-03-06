@@ -1,0 +1,12 @@
+species:
+- name: X
+
+reactions:
+- description: immigration
+  reactants: []
+  products: [(X, 10)]
+  k: alpha
+- description: death
+  reactants: [X]
+  products: []
+  k: mu

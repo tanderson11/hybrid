@@ -1,5 +1,0 @@
-Parameter k1:
-    value: 0.001.
-
-Parameter k2:
-    value: 0.01.

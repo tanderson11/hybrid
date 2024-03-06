@@ -1,0 +1,12 @@
+species:
+- name: X
+
+reactions:
+- description: birth
+  reactants: [X]
+  products: [(X, 2)]
+  k: Lambda
+- description: death
+  reactants: [X]
+  products: []
+  k: mu
