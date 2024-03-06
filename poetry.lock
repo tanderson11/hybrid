@@ -1113,14 +1113,14 @@ files = [
 
 [[package]]
 name = "json5"
-version = "0.9.20"
+version = "0.9.21"
 description = "A Python implementation of the JSON5 data format."
 category = "main"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "json5-0.9.20-py3-none-any.whl", hash = "sha256:f623485b37fad95783233bad9352d21526709cbd9a2ec41ddc3e950fca85b701"},
-    {file = "json5-0.9.20.tar.gz", hash = "sha256:20a255981244081d5aaa4adc90d31cdbf05bed1863993cbf300b8e2cd2b6de88"},
+    {file = "json5-0.9.21-py3-none-any.whl", hash = "sha256:7793ca8dce59b3832aab12105e64e44cd80c3d12bb83c17993eb432f0e4b7c5a"},
+    {file = "json5-0.9.21.tar.gz", hash = "sha256:9de11bb7ef5ede45e9f63debbb42ffefdacafebe3adffd92cd35ae382387b6e2"},
 ]
 
 [package.extras]
@@ -1376,7 +1376,7 @@ test = ["jupyter-server (>=2.0.0)", "pytest (>=7.0)", "pytest-jupyter[server] (>
 [[package]]
 name = "jupyterflame"
 version = "0.0.1"
-description = "Brings flamegraphs into jupyter notebooks"
+description = ""
 category = "dev"
 optional = false
 python-versions = "*"

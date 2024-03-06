@@ -4,10 +4,10 @@ species:
 
 reactions:
 - description: dimerisation
-  reactants: [(P, 2)]
+  reactants: [[P, 2]]
   products: [P2]
   k: k1
 - description: dissociation
   reactants: [P2]
-  products: [(P, 2)]
+  products: [[P, 2]]
   k: k2

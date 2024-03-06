@@ -8,18 +8,19 @@ import pathlib
 from dataclasses import dataclass
 from typing import NamedTuple
 
-import reactionmodel.load
+import reactionmodel.parser
+
+from hybrid.parseconfig import HybridConfigParser
 from hybrid.simulate import SIMULATORS
-import hybrid.hybrid as hybrid
 
 # wherever we are, save test output to test_output folder
 test_out = './test_output/'
 
 def get_path_from_check_string(check_string, prefix, directory_name, filename):
     # we have a check string like p01m01i01 for parameters 1, model 1, and initial condition 1
-    # this function takes prefix (e.g. p/m/i) and finds the txt file that specifies the desired configuration
+    # this function takes prefix (e.g. p/m/i) and finds the yaml file that specifies the desired configuration
     match = re.search(f'{prefix}([0-9]+)', check_string)
-    model_path = f'{directory_name}/{filename}{match[1]}.txt' if match is not None else f'{filename}.txt'
+    model_path = f'{directory_name}/{filename}{match[1]}.yaml' if match is not None else f'{filename}.yaml'
     return model_path
 
 class SpecificationPaths(NamedTuple):
@@ -45,7 +46,6 @@ def extend_via_checks(tests, root, specifications):
         check_dir_root = check.split('/')[-2]
         tests_to_do.append((check_dir_root, specifications[check_dir_root], check))
 
-    test_results = {}
     for spec_name, specification, check_dir in tests_to_do:
         # each check directory contains 1 CSV file with a name like check{SBML_TEST_NUMBER}.csv
         assert(len(glob.glob(os.path.join(check_dir, 'check*.csv')))) == 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
@@ -58,25 +58,33 @@ def get_files(root, individual, collection, pattern):
         return [os.path.join(root, individual)]
     return glob.glob(os.path.join(root, collection, pattern))
 
+def load_specification(model_path, params_path, config_path, ic_path):
+    model = reactionmodel.parser.load(model_path).model
+    parameters = reactionmodel.parser.load(params_path).parameters
+    simulation_config = reactionmodel.parser.load(config_path, ConfigParser=HybridConfigParser).simulator_config
+    initial_condition = reactionmodel.parser.load(ic_path).initial_condition
+
+    return reactionmodel.parser.ParseResults(model, parameters, initial_condition, simulation_config)
+
 def extend_with_tests_from_dir(tests, dir):
     # crawl dir to find all tests in that dir and add them to the list `tests` passed as an argument
     print(f"Extending test suite from {dir}\nAll directories within {os.path.join(dir, 'checks/')} that match specifications in {dir} will be used as tests.")
-    model_paths  = get_files(dir, 'model.txt', 'models', 'model*.txt')
-    params_paths = get_files(dir, 'parameters.txt', 'parameters', 'parameters*.txt')
-    config_paths = get_files(dir, 'config.txt', 'configurations', 'config*.txt')
-    ic_paths     = get_files(dir, 'ic.txt', 'initial_conditions', 'initial*.txt')
+    model_paths  = get_files(dir, 'model.yaml', 'models', 'model*.yaml')
+    params_paths = get_files(dir, 'parameters.yaml', 'parameters', 'parameters*.yaml')
+    config_paths = get_files(dir, 'config.yaml', 'configurations', 'config*.yaml')
+    ic_paths     = get_files(dir, 'ic.yaml', 'initial_conditions', 'initial*.yaml')
     specifications = {}
     for model_path in model_paths:
         for params_path in params_paths:
             for config_path in config_paths:
                 for ic_path in ic_paths:
-                    specification = reactionmodel.load.load_specification(model_path, params_path, config_path, ic_path)
+                    specification = load_specification(model_path, params_path, config_path, ic_path)
                     # use the parameter and ic file names as a unique identifier for this combination
                     # later, we will look up all the combinations that we have test data for, and run simulations to check
-                    model_match = re.search('[a-z]+([0-9]+)\.txt', model_path)
-                    config_match = re.search('[a-z]+([0-9]+)\.txt', config_path)
-                    param_match = re.search('[a-z]+([0-9]+)\.txt', params_path)
-                    ic_match = re.search('[a-z]+([0-9]+)\.txt', ic_path)
+                    model_match = re.search('[a-z]+([0-9]+)\.yaml', model_path)
+                    config_match = re.search('[a-z]+([0-9]+)\.yaml', config_path)
+                    param_match = re.search('[a-z]+([0-9]+)\.yaml', params_path)
+                    ic_match = re.search('[a-z]+([0-9]+)\.yaml', ic_path)
                     matches = [('m', model_match), ('c', config_match), ('p', param_match), ('i', ic_match)]
                     identifier = ''
                     for id_str, match in matches:
@@ -155,22 +163,19 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
 
     def do_simulations(self, targets, desired_species):
         aligned_results = []
-        simulator = self.specification.simulator
-        simulator_klass = SIMULATORS[simulator]
         rng = np.random.default_rng()
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
-        simulation_options = self.specification.simulation_options.copy()
+        simulator_config = self.specification.simulator_config.copy()
+        simulator_class = simulator_config.pop('simulator')
+        simulator_class = SIMULATORS[simulator_class]
 
-        if simulator == 'hybrid':
-            partition_path = simulation_options.pop('partition')
-            partition_scheme = hybrid.load_partition_scheme(partition_path)
-            simulation_options['partition_function'] = partition_scheme.partition_function
         k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
-        simulator = simulator_klass(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
+        print(simulator_config)
+        simulator = simulator_class(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), **simulator_config)
 
         for i in range(self.n):
             print(i)
-            result = simulator.simulate(self.TEST_ARGUMENTS.t_span, initial_condition, rng, t_eval=self.TEST_ARGUMENTS.t_eval, **simulation_options)
+            result = simulator.simulate(self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval)
             aligned = self.align_single_result(result, self.check_data['time'], targets, desired_species)
             aligned_results.append(aligned)
         return aligned_results

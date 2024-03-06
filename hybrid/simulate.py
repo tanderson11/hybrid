@@ -3,11 +3,11 @@ from numpy.typing import ArrayLike
 from typing import Callable
 
 from .gillespie import GillespieSimulator
-#from .hybrid import HybridSimulator
+from .hybrid import HybridSimulator
 #from .tau import TauLeapSimulator
 
 SIMULATORS = {
-    #'haseltinerawlings': HybridSimulator,
+    'haseltinerawlings': HybridSimulator,
     'gillespie': GillespieSimulator,
     #'tauleap': TauLeapSimulator,
 }

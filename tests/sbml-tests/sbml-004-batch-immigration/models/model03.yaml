@@ -4,7 +4,7 @@ species:
 reactions:
 - description: immigration
   reactants: []
-  products: [(X, 100)]
+  products: [[X, 100]]
   k: alpha
 - description: death
   reactants: [X]

@@ -1,5 +1,5 @@
 simulator_config:
-  simulator: hybrid
+  simulator: haseltinerawlings
   partition:
     name: FixedThresholdPartitioner
     threshold: 100.0
