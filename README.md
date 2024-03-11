@@ -48,7 +48,23 @@ result = simulator.simulate(
 
 ## Combining `hybrid` and `reactionmodel`
 
-This package is designed to be compatible with the [`reactionmodel`](https://github.com/tanderson11/reactionmodel), a package used to specify systems of reactions.
+This package is designed to be compatible with the [`reactionmodel`](https://github.com/tanderson11/reactionmodel), a package used to specify systems of reactions. For example, if we revisit the simple birth death model, we could also build a `simulator` like so:
+
+```python
+from reactionmodel.model import Species, Reaction, Model
+from hybrid.gillespie import GillespieSimulator
+
+S = Species('S')
+
+l = 1.0
+u = 1.0001
+
+birth = Reaction([S], [(S, 2)], description='birth', k=l)
+death = Reaction([S], [], description='death', k=u)
+m = Model([S1], [birth, death])
+
+simulator = m.get_simulator(GillespieSimulator)
+```
 
 ## As a drop in replacement for `solve_ivp`
 
