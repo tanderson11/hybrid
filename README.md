@@ -54,7 +54,14 @@ result = simulator.simulate(
     y0 = [10.0],
     rng = np.random.default_rng(),
 )
+
+plt.plot(result.t_history, result.y_history.T)
+plt.title("Birth death process")
+plt.legend(['A'])
+plt.xlabel('time')
+plt.ylabel('# A')
 ```
+![One realization of the simple birth death process](notebooks/birthdeath.png)
 
 ### Hybrid simulation
 
