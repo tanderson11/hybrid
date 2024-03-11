@@ -66,6 +66,22 @@ class Step(NamedTuple):
 class Simulator(ABC):
     run_klass = Run
     def __init__(self, k, N, kinetic_order_matrix, jit=True, propensity_function=None) -> None:
+        """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
+
+        Parameters
+        ----------
+        k : ArrayLike or Callable
+            Either a vector of unchanging rate constants, or a function t: Arraylike that returns a vector of rate constants at time t.
+        N : ArrayLike
+            The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
+        kinetic_order_matrix : ArrayLike
+            The kinetic order matrix such that the _ij entry is the kinetic order of species i in reaction j.
+        jit : bool, optional
+            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation functions, by default True.
+        propensity_function : Callable or None, optional
+            If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
+            Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
+        """
         inhomogeneous = isinstance(k, Callable)
         if not inhomogeneous:
             k = np.asarray(k, dtype=float)
@@ -91,7 +107,28 @@ class Simulator(ABC):
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0)
 
-    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, **step_kwargs):
+    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, **step_kwargs) -> History:
+        """Simulate the reaction manifold between two time points given a starting state.
+
+        Parameters
+        ----------
+        t_span : ArrayLike
+            A tuple of times `(t0, t_end)` to simulate between.
+        y0 : ArrayLike
+            A vector y_i of the quantity of species i at time 0.
+        rng : np.random.Generator
+            The random number generator to use for all random numbers needed during simulation.
+        t_eval : ArrayLike, optional
+            A vector of time points at which to evaluate the system and return in the final results.
+            If None, evaluate at points chosen by the simulator, by default None.
+
+        Returns
+        -------
+        History
+            The results of the run with attributes `t`, `y` (the time and state of the system at t_end),
+            `t_history` and `y_history` (all time and states evaluated), and `status_counter`,
+            which records the kinds of termination that occurred during each step of simulation.
+        """
         y0 = np.asarray(y0)
         assert self.N.shape[0] == self.kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
         assert len(t_span) == 2
