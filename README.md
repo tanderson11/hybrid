@@ -53,7 +53,8 @@ result = simulator.simulate(
 Second, suppose we had two possible crystallizations of a reactant $\text{A}$:
 
 ```math
-2 \text{A} \to \text{B}```
+2 \text{A} \to \text{B}
+```
 and
 ```math
 \text{A} + \text{C} \to \text{D}
