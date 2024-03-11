@@ -53,6 +53,7 @@ result = simulator.simulate(
 Second, suppose we had two possible crystallizations of a reactant $\text{A}$:
 
 $$ 2 \text{A} \to \text{B}$$
+and
 $$\text{A} + \text{C} \to \text{D}$$
 
 where both reactions proceed with a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
