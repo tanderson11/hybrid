@@ -1,13 +1,13 @@
-import numpy as np
-from numpy.typing import ArrayLike
-from typing import Callable
-from scipy.integrate import solve_ivp
-from typing import NamedTuple
+from typing import NamedTuple, Callable
 from dataclasses import dataclass
 from enum import auto
-from numba import jit
 import json
 from collections import Counter
+
+import numpy as np
+from numpy.typing import ArrayLike
+from scipy.integrate import solve_ivp
+import numba
 
 from .simulator import Simulator, StepStatus
 
@@ -30,12 +30,12 @@ class StepUpdate(NamedTuple):
     nfev: int
 
 class HybridSimulator(Simulator):
-    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=[], jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
+    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=None, jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
         self.partition_function = partition_function
-        self.discontinuities = discontinuities
+        self.discontinuities = discontinuities if discontinuities is not None else []
         self.simulation_options = SimulationOptions(**kwargs)
         if dydt_function is None:
             self.dydt = self.construct_dydt_function(N, jit)
@@ -53,7 +53,7 @@ class HybridSimulator(Simulator):
 
     @staticmethod
     def jit_dydt_factory(N):
-        @jit(nopython=True)
+        @numba.jit(nopython=True)
         def jit_dydt(t, y_expanded, deterministic_mask, stochastic_mask, propensity_function, hitting_point):
             # by fiat the last entry of y will carry the integral of stochastic rates
             y = y_expanded[:-1]
@@ -120,7 +120,7 @@ class HybridSimulator(Simulator):
 
     @staticmethod
     def jit_propensity_factory(k, kinetic_order_matrix, inhomogeneous):
-        @jit(nopython=True)
+        @numba.jit(nopython=True)
         def jit_calculate_propensities(t, y):
             # Remember, we want total number of distinct combinations * k === rate.
             # we want to calculate (y_i kinetic_order_ij) (binomial coefficient)
@@ -154,7 +154,8 @@ class HybridSimulator(Simulator):
             return product_down_columns * k_of_t
         return jit_calculate_propensities
 
-    def step(self, t, y, t_end, rng, t_eval, events=[]):
+    def step(self, t, y, t_end, rng, t_eval, events=None):
+        if events is None: events = []
         """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs."""
         starting_propensities = self.propensity_function(t, y)
         partition = self.partition_function(y, starting_propensities)
@@ -345,8 +346,8 @@ class HybridSimulator(Simulator):
 
         return StepUpdate(t_history, y_history, status,step_solved.nfev)
 
-class HybridNotImplementedError(Exception):
-    pass
+class HybridNotImplementedError(NotImplementedError):
+    """Attempted to use a hybrid algorithm feature that has not been implemented."""
 
 @dataclass(frozen=True)
 class SimulationOptions():

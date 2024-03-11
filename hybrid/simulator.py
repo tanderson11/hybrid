@@ -4,7 +4,7 @@ from typing import Callable, NamedTuple
 from enum import IntEnum
 from collections import Counter
 from dataclasses import dataclass
-from abc import ABC, abstractmethod, abstractclassmethod
+from abc import ABC, abstractmethod
 
 class StepStatus(IntEnum):
     # simulators will subclass this to introduce other statuses.
@@ -16,9 +16,9 @@ class Run():
         y0 = np.asarray(y0)
         history_length = int(history_length)
         self.history_index = 0
-        
+
         self.status_counter = Counter()
-        
+
         self.t_history = np.zeros(history_length)
         self.y_history = np.zeros((y0.shape[0], history_length))
 
@@ -112,8 +112,9 @@ class Simulator(ABC):
     def step(self, t, y, t_end, rng, t_eval):
         ...
 
-    @abstractclassmethod
-    def construct_propensity_function(cls, k, kinetic_order_matrix, jit=True):
+    @classmethod
+    @abstractmethod
+    def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
         ...
 
 class HybridSimulator(Simulator):
