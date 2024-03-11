@@ -61,7 +61,7 @@ u = 1.0001
 
 birth = Reaction([S], [(S, 2)], description='birth', k=l)
 death = Reaction([S], [], description='death', k=u)
-m = Model([S1], [birth, death])
+m = Model([S], [birth, death])
 
 simulator = m.get_simulator(GillespieSimulator)
 ```
