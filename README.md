@@ -23,7 +23,13 @@ To see the kinds of arguments involved, let's consider two examples.
 
 ### Gillespie simulation
 
-First, suppose we want to simulate a simple birth death process for one species using Gillespie's algorithm:
+First, suppose we want to simulate a simple birth death process for one species using Gillespie's algorithm. We can represent the system as
+
+```math
+\text{A} \to \emptyset
+\text{A} \to 2 \text{A}
+```
+and let us suppose that the deaths unfold at a rate of 1.1 deaths / person * time whereas the births unfold at a rate 1 birth / person * time. Then we could simulate this system as follows:
 
 ```python
 import numpy as np
