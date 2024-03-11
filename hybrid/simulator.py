@@ -65,13 +65,13 @@ class Step(NamedTuple):
 
 class Simulator(ABC):
     run_klass = Run
-    def __init__(self, k, N, kinetic_order_matrix, jit=True, propensity_function=None) -> None:
+    def __init__(self, k: ArrayLike | Callable, N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
         ----------
-        k : ArrayLike or Callable
-            Either a vector of unchanging rate constants, or a function t: Arraylike that returns a vector of rate constants at time t.
+        k : ArrayLike | Callable
+            Either a vector of unchanging rate constants or a function of time that returns a vector of rate constants.
         N : ArrayLike
             The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
         kinetic_order_matrix : ArrayLike

@@ -2,7 +2,6 @@ from typing import NamedTuple, Callable
 from dataclasses import dataclass
 from enum import auto
 import json
-from collections import Counter
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -29,14 +28,98 @@ class StepUpdate(NamedTuple):
     status: HybridStepStatus
     nfev: int
 
+
+@dataclass
+class PartitionScheme():
+    def save(self, file):
+        dictionary = {'name': type(self).__name__}
+        dictionary.update(self.__dict__.copy())
+
+        with open(file, 'w') as f:
+            json.dump(dictionary, f)
+
+@dataclass
+class FixedThresholdPartitioner(PartitionScheme):
+    threshold: float
+
+    def partition_function(self, y, propensities):
+        stochastic = (propensities <= self.threshold) & (propensities != 0)
+        return Partition(~stochastic, stochastic, np.full_like(propensities, self.threshold))
+
+@dataclass(frozen=True)
+class Partition():
+    deterministic: np.ndarray
+    stochastic: np.ndarray
+    # array of values for what threshold was used to partition each propensity
+    propensity_thresholds: np.ndarray = None
+
+def stochastic_event_finder(t, y_expanded, partition, propensity_function, hitting_point):
+    stochastic_progress = y_expanded[-1]
+    return stochastic_progress-hitting_point
+stochastic_event_finder.terminal = True
+
+def partition_change_finder_factory(partition_fraction_for_halt):
+    def partition_change_finder(t, y_expanded, partition, propensity_function, hitting_point):
+        y = y_expanded[:-1]
+        propensities = propensity_function(t, y)
+        distance_to_switch = np.where(
+            partition.deterministic,
+            propensities - partition.propensity_thresholds * partition_fraction_for_halt,
+            np.inf
+        )
+        return distance_to_switch
+    partition_change_finder.terminal  = True
+    partition_change_finder.direction = -1
+
+    return partition_change_finder
+
 class HybridSimulator(Simulator):
-    def __init__(self, k, N, kinetic_order_matrix, partition_function, discontinuities=None, jit=True, propensity_function=None, dydt_function=None, **kwargs) -> None:
+    def __init__(self, k: Callable | ArrayLike, N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Callable | PartitionScheme, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, **kwargs) -> None:
+        """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
+
+        Parameters
+        ----------
+        k : ArrayLike | Callable
+            Either a vector of unchanging rate constants or a function of time that returns a vector of rate constants.
+        N : ArrayLike
+            The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
+        kinetic_order_matrix : ArrayLike
+            The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
+        partition_function : Callable | PartitionScheme
+            A function p(propensities) that returns a Partition object with attributes `deterministic`
+            (a mask for which pathways to consider as deterministic), `stochastic` (a mask for which pathways
+            to consider as stochastic), and `propensity_thresholds` (the value that each propensity was compared to
+            in order to partition it). In the original Haseltine-Rawlings algorithm, this function compares
+            each propensity to the fixed threshold of `100.0` events per unit time. To retrieve this behavior,
+            pass the object `FixedThresholdPartitioner(100.0)`.
+        discontinuities : ArrayLike, optional
+            A vector of time points that correspond to discontinuities in the function k(t). Providing these points
+            while allow the simulator to avoid integrating over a discontinuity, by default None.
+        jit : bool, optional
+            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation helper functions, by default True.
+        propensity_function : Callable or None, optional
+            If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
+            Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
+        dydt_function : Callable, optional
+            If not None, use the specified function a_ij(t,y) to calculate the derivative of the system at time t and state y.
+            Specify this if there is a fast means of calculating the derivative, by default None.
+        **kwargs : HybridSimulationOptions
+            A valid selection of options specific to the Haseltine-Rawlings hybrid simulation algorithm.
+            To see documentation of each option, inspect the class HybridSimulationOptions.
+
+        Raises
+        ------
+        TypeError
+            If `k` is specified as a string, possibly due to the lazy evaluation of parameters in the reactionmodel package.
+        """
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
+        if isinstance(partition_function, PartitionScheme):
+            partition_function = partition_function.partition_function
         self.partition_function = partition_function
         self.discontinuities = discontinuities if discontinuities is not None else []
-        self.simulation_options = SimulationOptions(**kwargs)
+        self.simulation_options = HybridSimulationOptions(**kwargs)
         if dydt_function is None:
             self.dydt = self.construct_dydt_function(N, jit)
         else:
@@ -350,7 +433,7 @@ class HybridNotImplementedError(NotImplementedError):
     """Attempted to use a hybrid algorithm feature that has not been implemented."""
 
 @dataclass(frozen=True)
-class SimulationOptions():
+class HybridSimulationOptions():
     """This class defines the configuration of a Haseltine-Rawlings hybrid forward simulation algorithm.
 
     Args:
@@ -399,51 +482,10 @@ class SimulationOptions():
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
 
-@dataclass
-class PartitionScheme():
-    def save(self, file):
-        dictionary = {'name': type(self).__name__}
-        dictionary.update(self.__dict__.copy())
-
-        with open(file, 'w') as f:
-            json.dump(dictionary, f)
-
-@dataclass
-class FixedThresholdPartitioner(PartitionScheme):
-    threshold: float
-
-    def partition_function(self, y, propensities):
-        stochastic = (propensities <= self.threshold) & (propensities != 0)
-        return Partition(~stochastic, stochastic, np.full_like(propensities, self.threshold))
-
-@dataclass(frozen=True)
-class Partition():
-    deterministic: np.ndarray
-    stochastic: np.ndarray
-    # array of values for what threshold was used to partition each propensity
-    propensity_thresholds: np.ndarray = None
-
-def stochastic_event_finder(t, y_expanded, partition, propensity_function, hitting_point):
-    stochastic_progress = y_expanded[-1]
-    return stochastic_progress-hitting_point
-stochastic_event_finder.terminal = True
-
-def partition_change_finder_factory(partition_fraction_for_halt):
-    def partition_change_finder(t, y_expanded, partition, propensity_function, hitting_point):
-        y = y_expanded[:-1]
-        propensities = propensity_function(t, y)
-        distance_to_switch = np.where(
-            partition.deterministic,
-            propensities - partition.propensity_thresholds * partition_fraction_for_halt,
-            np.inf
-        )
-        return distance_to_switch
-    partition_change_finder.terminal  = True
-    partition_change_finder.direction = -1
-
-    return partition_change_finder
-
 def canonicalize_event(t_events, y_events):
+    """For a set of integration events, ensure our expectations are met and return the event.
+
+    We expect exactly 1 event, which is terminal. We return the time and state at the event, and the event index."""
     event_index = None
     for i,event_set in enumerate(t_events):
         if event_set.size == 0:
@@ -460,6 +502,7 @@ def canonicalize_event(t_events, y_events):
     return t_event, y_event, event_index
 
 def round_with_method(y, round_randomly=False, rng=None):
+    """Round the state vector `y` either conventionally or randomly."""
     if round_randomly:
         # round up if random float is less than decimal (small decimal ==> rarely round up)
         # round down otherwise
