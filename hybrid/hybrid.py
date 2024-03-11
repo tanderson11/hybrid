@@ -82,7 +82,7 @@ class HybridSimulator(Simulator):
         k : ArrayLike | Callable
             Either a vector of unchanging rate constants or a function of time that returns a vector of rate constants.
         N : ArrayLike
-            The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
+            The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
         kinetic_order_matrix : ArrayLike
             The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
         partition_function : Callable | PartitionScheme

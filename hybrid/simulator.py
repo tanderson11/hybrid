@@ -54,6 +54,21 @@ class Run():
 
 @dataclass(frozen=True)
 class History():
+    """The result of one simulation.
+
+    Attributes
+    ----------
+    t: float
+        The time at the end of simulation.
+    y: ArrayLike
+        The state vector at t. `y_i` is the quantity of the `i`th species at time `t`.
+    t_history: ArrayLike
+        The vector of all times where the state was recorded.
+    y_history: ArrayLike
+        An array of state vectors where the `i`th state vector corresponds to the `i`th entry in `t_history`.
+    status_counter: Counter
+        A counter object that records all the status of the simulator at the end of each simulation step.
+    """
     t: float
     y: ArrayLike
     t_history: ArrayLike
@@ -75,7 +90,7 @@ class Simulator(ABC):
         k : ArrayLike | Callable
             Either a vector of unchanging rate constants or a function of time that returns a vector of rate constants.
         N : ArrayLike
-            The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
+            The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
         kinetic_order_matrix : ArrayLike
             The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
         jit : bool, optional
