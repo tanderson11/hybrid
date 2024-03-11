@@ -50,12 +50,12 @@ result = simulator.simulate(
 
 ### Hybrid simulation
 
-Second, suppose we had a crystallization reaction
+Second, suppose we had two possible crystallizations of a reactant $\text{A}$:
 
 $$ 2 \text{A} \to \text{B}\\
 \text{A} + \text{C} \to \text{D}$$
 
-where both reactions a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
+where both reactions proceed with a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
 
 ```python
 import numpy as np
@@ -89,6 +89,8 @@ print(result.y)
 # array([9.09940e+04, 4.54501e+05, 1.00000e+00, 9.00000e+00])
 # 9/10 C were converted to D in this realization
 ```
+
+Note that in order to run a hybrid simulation, we had to specify a means of partitioning the system into fast and slow reactions. In this example, we used a `FixedThresholdPartitioner` to treat any reaction with propensity of 100 firings / unit time or less as stochastic. This is the scheme orginally proposed by Haseltine and Rawlings. For more information, read their [original paper](https://pubs.aip.org/aip/jcp/article-abstract/117/15/6959/447100/Approximate-simulation-of-coupled-fast-and-slow).
 
 ## Combining `hybrid` and `reactionmodel`
 
