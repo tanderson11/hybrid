@@ -2,8 +2,8 @@
 
 ## Installation
 
-1. Clone the repository: `git clone https://github.com/tanderson11/hybrid-algorithm.git`
-2. Use `poetry` to install dependencies: `poetry install`
+1. Clone the repository: `git clone https://github.com/tanderson11/hybrid.git`
+2. Use [Poetry](https://python-poetry.org) to install dependencies: `poetry install`
 
 ## Usage
 
@@ -11,8 +11,7 @@
 
 `hybrid.py` uses numerical integration to solve a system of differential equations corresponding to a biological/chemical system given an initial state.
 
-The reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species i after unit progress in reaction j), and `A` the rate involvement matrix (`A_ij` = kinetic intensity (power) for species i in reaction j). The rate constants are defined by the vector `k`, which has a number of entries equal to the number of reaction pathways.
-
+The reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species `i` after unit progress in reaction `j`), and `V` the rate involvement matrix (`V_ij` = kinetic intensity (power) for species `i` in reaction `j`). The rate constants are defined by the vector `k`, the `j`th entry of which is the rate constant of reaction `j`.
 Explicit time dependence is possible by specifying `k` as a function of time `t`.
 
 The full signature and output of the `forward_time` function is given below:

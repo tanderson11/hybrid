@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Callable, NamedTuple
+from typing import NamedTuple
 from numba import jit as numbajit
 from scipy.integrate import quad
 from scipy.optimize import fsolve

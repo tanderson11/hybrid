@@ -1,10 +1,12 @@
-import numpy as np
-from numpy.typing import ArrayLike
 from typing import Callable, NamedTuple
 from enum import IntEnum
 from collections import Counter
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from typing import Union
+
+import numpy as np
+from numpy.typing import ArrayLike
 
 class StepStatus(IntEnum):
     # simulators will subclass this to introduce other statuses.
@@ -65,7 +67,7 @@ class Step(NamedTuple):
 
 class Simulator(ABC):
     run_klass = Run
-    def __init__(self, k: ArrayLike | Callable, N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -75,9 +77,9 @@ class Simulator(ABC):
         N : ArrayLike
             The stoichiometry matrix N such that N_ij is the stoichiometric coefficient of species i in reaction j.
         kinetic_order_matrix : ArrayLike
-            The kinetic order matrix such that the _ij entry is the kinetic order of species i in reaction j.
+            The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
         jit : bool, optional
-            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation functions, by default True.
+            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation helper functions, by default True.
         propensity_function : Callable or None, optional
             If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
             Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.

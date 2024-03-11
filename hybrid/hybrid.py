@@ -2,6 +2,7 @@ from typing import NamedTuple, Callable
 from dataclasses import dataclass
 from enum import auto
 import json
+from typing import Union
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -27,7 +28,6 @@ class StepUpdate(NamedTuple):
     y_history: np.ndarray
     status: HybridStepStatus
     nfev: int
-
 
 @dataclass
 class PartitionScheme():
@@ -74,7 +74,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
     return partition_change_finder
 
 class HybridSimulator(Simulator):
-    def __init__(self, k: Callable | ArrayLike, N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Callable | PartitionScheme, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, **kwargs) -> None:
+    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -436,7 +436,8 @@ class HybridNotImplementedError(NotImplementedError):
 class HybridSimulationOptions():
     """This class defines the configuration of a Haseltine-Rawlings hybrid forward simulation algorithm.
 
-    Args:
+    Attributes
+    ----------
         jit (bool, optional):
             whether to insist that propensities, derivatives, and rate constants
             are calculated using Numba jit compiled functions
@@ -469,7 +470,7 @@ class HybridSimulationOptions():
     contrived_no_reaction_rate: float = None
     deqs: bool = True
     round_randomly: bool = True
-    halt_on_partition_change: bool = True
+    halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = 0.9
 
     def __post_init__(self):

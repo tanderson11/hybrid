@@ -2,8 +2,8 @@ import numpy as np
 from numpy.typing import ArrayLike
 from typing import Callable
 
-from .gillespie import GillespieSimulator
-from .hybrid import HybridSimulator
+from hybrid.gillespie import GillespieSimulator
+from hybrid.hybrid import HybridSimulator
 #from .tau import TauLeapSimulator
 
 SIMULATORS = {
