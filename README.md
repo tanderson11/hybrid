@@ -21,6 +21,8 @@ The recommended pattern for using this package is:
 
 To see the kinds of arguments involved, let's consider two examples.
 
+### Gillespie simulation
+
 First, suppose we want to simulate a simple birth death process for one species using Gillespie's algorithm:
 
 ```python
@@ -46,6 +48,48 @@ result = simulator.simulate(
 )
 ```
 
+### Hybrid simulation
+
+Second, suppose we had a crystallization reaction
+
+$$ 2 \text{A} \to \text{B}\\
+\text{A} + \text{C} \to \text{D}$$
+
+where both reactions a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
+
+```python
+import numpy as np
+from hybrid.hybrid import HybridSimulator, FixedThresholdPartitioner
+
+k = np.array([1e-7, 1e-7])
+
+# it's often easier to work with N transpose
+# so that rows correspond to reactions
+N = np.array([ # A, B, C, D
+    [-2, 1, 0, 0],
+    [-1, 0, -1, 1],
+]).T
+
+kinetic_orders = np.array([
+    [2, 0, 0, 0],
+    [1, 0, 1, 0]
+])
+
+
+simulator = HybridSimulator(k, N, kinetic_orders, partition_function=FixedThresholdPartitioner(100.0))
+
+result = simulator.simulate(
+    t_span = (0.0, 100.0),
+    y0 = [1e6, 0, 10, 0],
+    rng = np.random.default_rng(),
+)
+
+print(result.y)
+
+# array([9.09940e+04, 4.54501e+05, 1.00000e+00, 9.00000e+00])
+# 9/10 C were converted to D in this realization
+```
+
 ## Combining `hybrid` and `reactionmodel`
 
 This package is designed to be compatible with the [`reactionmodel`](https://github.com/tanderson11/reactionmodel), a package used to specify systems of reactions. For example, if we revisit the simple birth death model, we could also build a `simulator` like so:
@@ -56,19 +100,22 @@ from hybrid.gillespie import GillespieSimulator
 
 S = Species('S')
 
-l = 1.0
-u = 1.0001
+birth = Reaction([S], [(S, 2)], description='birth', k='l')
+death = Reaction([S], [], description='death', k='mu')
 
-birth = Reaction([S], [(S, 2)], description='birth', k=l)
-death = Reaction([S], [], description='death', k=u)
 m = Model([S], [birth, death])
 
-simulator = m.get_simulator(GillespieSimulator)
+parameters = {
+    'l': 1.0,
+    'mu': 1.01,
+}
+
+simulator = m.get_simulator(GillespieSimulator, parameters=parameters)
 ```
 
 ## As a drop in replacement for `solve_ivp`
 
-I recommend using the `Simulator` class and its subclasses to execute forward simulations: this avoids the overhead of creating a simulator every time you run a simulation and allows for the isolation of a model from its parameters. But if you want, you can also use this package as a replacement for Scipy's [`solve_ivp`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html) function: like so:
+I recommend using the `Simulator` class and its subclasses to execute forward simulations: this avoids the overhead of creating a simulator every time you run a simulation and allows for the isolation of a model from its parameters. But if you want, you can also use this package as a replacement for Scipy's [`solve_ivp`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html) function like so:
 
 ```python
 import hybrid.simulate as simulate

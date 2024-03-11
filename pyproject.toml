@@ -12,7 +12,6 @@ python = ">=3.9,<3.11"
 jupyter = "^1.0.0"
 matplotlib = "^3.7.2"
 numba = "^0.58.1"
-reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 statsmodels = "^0.14.1"
 pathlib = "^1.0.1"
 
@@ -20,6 +19,7 @@ pathlib = "^1.0.1"
 matlabengine = "^9.14.3"
 
 [tool.poetry.group.dev.dependencies]
+reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 importlib = "^1.0.4"
 flameprof = "^0.4"
 flameplot = "^1.1.0"

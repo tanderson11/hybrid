@@ -109,7 +109,7 @@ class Simulator(ABC):
 
         self.k = k
         self.N = N.astype(float)
-        self.kinetic_order_matrix = kinetic_order_matrix
+        self.kinetic_order_matrix = kinetic_order_matrix.astype(float)
 
         self.jit = jit
         if propensity_function is not None:
