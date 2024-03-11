@@ -52,8 +52,8 @@ result = simulator.simulate(
 
 Second, suppose we had two possible crystallizations of a reactant $\text{A}$:
 
-$$ 2 \text{A} \to \text{B}\\
-\text{A} + \text{C} \to \text{D}$$
+$$ 2 \text{A} \to \text{B}$$
+$$\text{A} + \text{C} \to \text{D}$$
 
 where both reactions proceed with a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
 
@@ -63,17 +63,18 @@ from hybrid.hybrid import HybridSimulator, FixedThresholdPartitioner
 
 k = np.array([1e-7, 1e-7])
 
-# it's often easier to work with N transpose
+# it's often more intuitive to work with N transpose
 # so that rows correspond to reactions
 N = np.array([ # A, B, C, D
     [-2, 1, 0, 0],
     [-1, 0, -1, 1],
 ]).T
 
+# and V transpose
 kinetic_orders = np.array([
     [2, 0, 0, 0],
     [1, 0, 1, 0]
-])
+]).T
 
 
 simulator = HybridSimulator(k, N, kinetic_orders, partition_function=FixedThresholdPartitioner(100.0))
@@ -113,6 +114,36 @@ parameters = {
 }
 
 simulator = m.get_simulator(GillespieSimulator, parameters=parameters)
+simulator.simulate(
+    [0.0, 100.0],
+    m.make_initial_condition({'S': 10.0}),
+    rng = np.random.default_rng(),
+)
+```
+
+If we revisit the crystallization model, here is how we could specify it with `reactionmodel`:
+
+```python
+from reactionmodel.model import Species, Reaction, Model
+from hybrid.hybrid import HybridSimulator, FixedThresholdPartitioner
+
+A = Species('A')
+B = Species('B')
+C = Species('C')
+D = Species('D')
+
+path1 = Reaction([(A, 2)], [B], k='k')
+path2 = Reaction([A, C], [D], k='k')
+
+m = Model([A,B,C,D], [path1, path2])
+
+m.get_simulator(parameters={'k':1e-7}, partition_function=FixedThresholdPartitioner(100.0))
+
+m.simulate(
+    [0.0, 100.0],
+    m.make_initial_condition({'A':1e6, 'C': 10})
+    rng=np.random.defaultrng(),
+)
 ```
 
 ## As a drop in replacement for `solve_ivp`
