@@ -27,6 +27,8 @@ First, suppose we want to simulate a simple birth death process for one species 
 
 ```math
 \text{A} \to \emptyset
+```
+```math
 \text{A} \to 2 \text{A}
 ```
 and let us suppose that the deaths unfold at a rate of 1.1 deaths / person * time whereas the births unfold at a rate 1 birth / person * time. Then we could simulate this system as follows:
