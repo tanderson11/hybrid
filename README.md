@@ -137,7 +137,7 @@ path2 = Reaction([A, C], [D], k='k')
 
 m = Model([A,B,C,D], [path1, path2])
 
-m.get_simulator(parameters={'k':1e-7}, partition_function=FixedThresholdPartitioner(100.0))
+m.get_simulator(HybridSimulator, parameters={'k':1e-7}, partition_function=FixedThresholdPartitioner(100.0))
 
 m.simulate(
     [0.0, 100.0],
