@@ -7,9 +7,9 @@
 
 ## Explanation
 
-`hybrid.py` uses numerical integration to solve a system of differential equations corresponding to a biological/chemical system given an initial state.
+This package uses a combination of numerical integration and a stochastic simulation algorithm to simulate a group of reactions corresponding to biological/chemical system given an initial state. Primarily, this package implements the [Haseltine-Rawlings forward simulation](https://pubs.aip.org/aip/jcp/article-abstract/117/15/6959/447100/Approximate-simulation-of-coupled-fast-and-slow) algorithm described in *The Journal of Chemical Physics* in 2002. Although there a few updates to their approach to reflect the advances of the field (for example: random rather deterministic rounding). For more details see the [Technical Details](#technical-details) section.
 
-The reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species `i` after unit progress in reaction `j`), and `V` the kinetic order matrix (`V_ij` = kinetic intensity (exponent) for species `i` in reaction `j`). The rate constants are defined by the vector `k`, the `j`th entry of which is the rate constant of reaction `j`.
+For any system, the reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species `i` after unit progress in reaction `j`), and `V` the kinetic order matrix (`V_ij` = kinetic intensity (exponent) for species `i` in reaction `j`). The rate constants are defined by the vector `k`, the `j`th entry of which is the rate constant of reaction `j`.
 Explicit time dependence is possible by specifying `k` as a function of time `t`.
 
 ## Usage
@@ -220,3 +220,5 @@ def simulate(t_span: ArrayLike, y0: ArrayLike, k: Callable[[float], ArrayLike], 
             A counter object that records all the status of the simulator at the end of each simulation step.
     """
 ```
+
+## Technical details
