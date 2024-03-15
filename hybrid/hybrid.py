@@ -7,6 +7,7 @@ from typing import Union
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.integrate import solve_ivp
+import scipy.special
 import numba
 
 from .simulator import Simulator, StepStatus
@@ -198,7 +199,7 @@ class HybridSimulator(Simulator):
             # with states raised to power of involvement
             # multiplied by rate constants == propensity
             # dimension of y is expanded to make it a column vector
-            return np.prod(np.expand_dims(y, axis=1)**kinetic_order_matrix, axis=0) * k_of_t
+            return np.prod(scipy.special.binom(np.expand_dims(y, axis=1), kinetic_order_matrix), axis=0) * k_of_t
         return calculate_propensities
 
     @staticmethod

@@ -52,6 +52,9 @@ class Run():
         y_history = self.y_history[:,:self.history_index+1]
         return History(self.get_t(), self.get_y(), t_history, y_history, self.status_counter)
 
+    def get_step_kwargs(self):
+        return {}
+
 @dataclass(frozen=True)
 class History():
     """The result of one simulation.
@@ -157,7 +160,7 @@ class Simulator(ABC):
 
         t = t0
         while t < t_end:
-            step = self.step(*run.current_state(), t_end, rng, t_eval, **step_kwargs)
+            step = self.step(*run.current_state(), t_end, rng, t_eval, **step_kwargs, **run.get_step_kwargs())
             t = run.handle_step(step)
 
         return run.get_history()
