@@ -91,12 +91,12 @@ class GillespieSimulator(Simulator):
     def expand_step_with_t_eval(t, y0, hitting_time, update, t_eval, t_end):
         #import pdb; pdb.set_trace()
         # gather any intermediate values requested (y is constant at each intermediate)
-        t_history = list(t_eval[(t_eval > t) & (t_eval < t_end)])
+        t_history = list(t_eval[(t_eval > t) & (t_eval < t + hitting_time)])
         t_history.append(t+hitting_time)
         y_history = np.zeros((len(y0), len(t_history)))
         # back fill all times prior to the hitting time with the initial state
         if len(t_history) - 1 > 0:
-            y_history[:,:len(t_history)-1] = y0
+            y_history[:,:len(t_history)-1] = np.expand_dims(y0, 1)
         y_history[:,len(t_history)-1]  = y0+update
 
         return t_history, y_history
