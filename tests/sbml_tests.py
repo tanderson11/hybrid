@@ -147,7 +147,8 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
         targets = [all_species.index(s) for s in desired_species]
 
         results = self.do_simulations(targets, desired_species)
-
+        for df in results:
+            df.set_index('time', inplace=True)
         df = pd.concat(results, axis=1)
         all_results = pd.concat([df.groupby(by=df.columns, axis=1).mean(), df.groupby(by=df.columns, axis=1).std()], axis=1)
 
