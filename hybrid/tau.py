@@ -2,10 +2,9 @@ from typing import Callable, Union
 from enum import Enum
 
 import numpy as np
-import numba
 from numpy.typing import ArrayLike
 
-from .gillespie import GillespieSimulator
+from hybrid.gillespie import GillespieSimulator
 from hybrid.simulator import StepStatus, Step, Run
 
 class TauNotImplementedError(NotImplementedError):
@@ -50,7 +49,7 @@ class TauRun(Run):
 
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100) -> None:
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
         self.epsilon = epsilon
         self.n_c = critical_threshold
@@ -61,6 +60,8 @@ class TauLeapSimulator(GillespieSimulator):
             print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
         if self.leap_type == TauLeapers.species:
             self.g = self.build_g_function()
+
+        self.species_creation_is_critical = species_creation_is_critical
 
         if self.inhomogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation. Will assume that rates are constant within leaps.")
@@ -82,7 +83,16 @@ class TauLeapSimulator(GillespieSimulator):
 
     def find_critical_reactions(self, y):
         L = self.find_L(y)
-        return L < self.n_c
+        critical = L < self.n_c
+
+        # optionally add reactions that produce any species that currently has 0 specimens to critical reactions
+        if self.species_creation_is_critical:
+            zero_specimens = y==0
+            if zero_specimens.any():
+                new_species_mask = ((self.N>0)[zero_specimens]).max(axis=0)
+                critical |= new_species_mask
+
+        return critical
 
     def gillespie_step_wrapper(self, t, y, t_end, rng, t_eval):
         g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
@@ -218,7 +228,7 @@ class TauLeapSimulator(GillespieSimulator):
         return tau, update
 
     def tau_step(self, t, y, t_end, rng, t_eval):
-        #import pdb; pdb.set_trace()
+        #import pudb; pudb.set_trace()
         propensities = self.propensity_function(t, y)
         total_propensity = np.sum(propensities)
 
@@ -255,7 +265,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau = tau_prime_prime
             #print(tau)
             #import pdb; pdb.set_trace()
-            gillespie_update = self.gillespie_update_proposal(self.N, propensities[critical_reactions], total_propensity, rng)
+            gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], total_propensity, rng)
             tau, tau_update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
             status = TauStepStatus.leap_critical_combined
