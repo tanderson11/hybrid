@@ -78,6 +78,13 @@ class History():
     y_history: ArrayLike
     status_counter: Counter
 
+    def plot(self, legend, ax=None):
+        import matplotlib.pyplot as plt
+        if ax is None:
+            ax = plt.subplot()
+        ax.plot(self.t_history, self.y_history.T)
+        ax.legend(legend)
+
 class Step(NamedTuple):
     t_history: ArrayLike
     y_history: ArrayLike
