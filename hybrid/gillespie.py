@@ -75,8 +75,9 @@ class GillespieSimulator(Simulator):
         return objective_function
 
     @staticmethod
-    def gillespie_update_proposal(N, propensities, total_propensity, rng):
-        selections = propensities.cumsum() / total_propensity
+    def gillespie_update_proposal(N, propensities, rng):
+        cumsum = propensities.cumsum()
+        selections = cumsum / cumsum[-1]
         pathway_rand = rng.random()
         entry = np.argmax(selections > pathway_rand)
         path_index = np.unravel_index(entry, selections.shape)
@@ -104,9 +105,8 @@ class GillespieSimulator(Simulator):
     def gillespie_step(self, t, y, t_end, rng, t_eval):
         hitting_time = self.find_hitting_time_inhomogenous(t, y, self.propensity_function, rng)
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
-        total_propensity = np.sum(endpoint_propensities)
 
-        update = self.gillespie_update_proposal(self.N, endpoint_propensities, total_propensity, rng)
+        update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, GillespieStepStatus.stochastic)
@@ -121,7 +121,7 @@ class GillespieSimulator(Simulator):
             update = np.zeros_like(y)
             return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), GillespieStepStatus.t_end)
 
-        update = self.gillespie_update_proposal(self.N, propensities, total_propensity, rng)
+        update = self.gillespie_update_proposal(self.N, propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, GillespieStepStatus.stochastic)
