@@ -49,7 +49,7 @@ class TauRun(Run):
 
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, only_reactants_critical=True, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100) -> None:
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
         self.epsilon = epsilon
         self.n_c = critical_threshold
@@ -62,6 +62,7 @@ class TauLeapSimulator(GillespieSimulator):
             self.g = self.build_g_function()
 
         self.species_creation_is_critical = species_creation_is_critical
+        self.only_reactants_critical = only_reactants_critical
 
         if self.inhomogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation. Will assume that rates are constant within leaps.")
@@ -69,7 +70,7 @@ class TauLeapSimulator(GillespieSimulator):
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0, self.gillespie_steps_on_rejection)
 
-    def find_L(self, y):
+    def find_L(self, y, reactants_only=True):
         # the maximum permitted firings of each reaction before reducing a population below 0
         # see formula 5 of Cao et al. 2005
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -77,12 +78,15 @@ class TauLeapSimulator(GillespieSimulator):
             L = np.expand_dims(y,axis=1) / self.N[None, :]
         # drop positive entries (they are being created not destroyed in stoichiometry)
         # and invert negative entries so we can take the min
-        L = np.where(L < 0, -L, np.inf)
+        if reactants_only:
+            L = np.where(L < 0, -L, np.inf)
+        else:
+            L = np.where(L != 0, np.abs(L), np.inf)
         L = np.squeeze(np.min(L, axis=1))
         return L
 
     def find_critical_reactions(self, y):
-        L = self.find_L(y)
+        L = self.find_L(y, self.only_reactants_critical)
         critical = L < self.n_c
 
         # optionally add reactions that produce any species that currently has 0 specimens to critical reactions
@@ -135,11 +139,30 @@ class TauLeapSimulator(GillespieSimulator):
 
         def g(y):
             g = np.zeros_like(y)
-            g[shohor == 1] = hor
-            g[(shohor == 2) & (hor == 2)] = 2 + 1/(y-1)
-            g[(shohor == 2) & (hor == 3)] = 3/2 * (2 + 1/(y-1))
-            g[(shohor == 3) & (hor == 3)] = 3 + 1/(y-1) + 1/(y-2)
-            # TK what to do with infinite and negative values?
+            g = np.where(
+                shohor==1,
+                hor,
+                g
+            )
+            g = np.where(
+                (shohor == 2) & (hor == 2),
+                2 + 1/(y-1),
+                g
+            )
+
+            g = np.where(
+                (shohor == 2) & (hor == 3),
+                3/2 * (2 + 1/(y-1)),
+                g
+            )
+
+            g = np.where(
+                (shohor == 3) & (hor == 3),
+                3 + 1/(y-1) + 1/(y-2),
+                g
+            )
+
+            # TK what to do with infinite values?
             return g
 
         return g
@@ -152,8 +175,25 @@ class TauLeapSimulator(GillespieSimulator):
         sigma_2_hat_i = (N**2) @ propensities
         # calculate g vector (if it depends on y) or use constant g vector
         g = g(y) if not isinstance(g, np.ndarray) else g
-        tau1 = np.min(np.maximum(y * epsilon / g, 1) / np.abs(mu_hat_i))
-        tau2 = np.min(np.maximum(y * epsilon / g, 1)**2 / np.abs(sigma_2_hat_i))
+
+        # WEIRD PROBLEM: if I insist on a smaller upper bound here, the results are WORSE in the mutant emergence problem
+
+        # Currently, I disagree with Cao and Gillespie: I believe that it should be a max of y*epsilon/g and EPSILON
+        # it's unfair in one branch insist that the propensity changes by no more than epsilon of its total value
+        # and in the other branch insist that it changes by no more than potentially 100% of its value! when we make our leap
+        # we're quite likely in that regime to have multiple reactions to fire, but the whole point of having this maximum here
+        # is to say "hey, the reaction will change by at LEAST 1 discrete firing, so let's not insist on a time step that is super ultra tiny"
+        # but by choosing this 1/|mu_hat_i|, we're saying "hey it changes by at LEAST 1 firing, so let's let it change by 1,2,or3ish firings"
+        # and that is whack
+        # although I guess with this species partitioning, ... that's essentially defying what Cao proposed entirely, because y >= 1
+
+        # CAO AND GILLESPIE
+        tau1 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1) / np.abs(mu_hat_i))
+        tau2 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1)**2 / np.abs(sigma_2_hat_i))
+        # THAYER
+        # should modify this so we don't get epsilon**2?
+        #tau1 = np.min(np.maximum(y * epsilon / g, epsilon) / np.abs(mu_hat_i))
+        #tau2 = np.min(np.maximum(y * epsilon / g, epsilon)**2 / np.abs(sigma_2_hat_i))
 
         return min(tau1, tau2)
 
@@ -237,6 +277,8 @@ class TauLeapSimulator(GillespieSimulator):
 
         #import pdb; pdb.set_trace()
 
+        #if critical_reactions.any(): import pudb; pudb.set_trace()
+
         # if all reactions are critical, we won't tau leap, we'll just do gillespie
         if (critical_reactions).all():
             tau_prime = np.inf
@@ -253,21 +295,25 @@ class TauLeapSimulator(GillespieSimulator):
             tau_prime_prime = np.inf
         else:
             tau_prime_prime = self.find_hitting_time_homogeneous(critical_sum, rng)
+            #tau_prime_prime = 1 / critical_sum
 
         # no critical events took place in our proposed leap forward of tau_prime, so we execute that leap
         if tau_prime < tau_prime_prime:
             tau = tau_prime
-            tau, update = self.tau_update_proposal_avoiding_negatives(self.N, y, tau, propensities, rng)
+            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, tau, propensities[~critical_reactions], rng)
 
             status = TauStepStatus.leap
         # a single critical event took place at tau_prime_prime, adjudicate that event and the leap of non-critical reactions
         else:
             tau = tau_prime_prime
             #print(tau)
-            #import pdb; pdb.set_trace()
-            gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], total_propensity, rng)
-            tau, tau_update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, tau, propensities[~critical_reactions], rng)
+            #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
+            gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng)
+            tau_update = self.tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
+
+            if ((y+update) < 0 ).any():
+                return Step(None, None, TauStepStatus.rejected)
             status = TauStepStatus.leap_critical_combined
 
         t_history, y_history = self.expand_step_with_t_eval(t,y,tau,update,t_eval,t_end)
