@@ -20,11 +20,11 @@ matlabengine = "^9.14.3"
 
 [tool.poetry.group.dev.dependencies]
 reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
-importlib = "^1.0.4"
 flameprof = "^0.4"
 flameplot = "^1.1.0"
 parameterized = "^0.9.0"
 jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
+pudb = "^2024.1"
 
 [build-system]
 requires = ["poetry-core"]
