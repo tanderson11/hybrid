@@ -23,6 +23,7 @@ class Run():
 
         self.t_history = np.zeros(history_length)
         self.y_history = np.zeros((y0.shape[0], history_length))
+        self.status_history = np.zeros(history_length)
 
         self.t_history[0]    = t0
         self.y_history[:, 0] = y0
@@ -38,19 +39,22 @@ class Run():
 
     def handle_step(self, step):
         self.status_counter.update({step.status:1})
+
         if step.status.was_rejected():
             return self.get_t()
 
         n_samples = len(step.t_history)
         self.t_history[self.history_index+1:self.history_index+n_samples+1] = step.t_history
         self.y_history[:, self.history_index+1:self.history_index+n_samples+1] = step.y_history
+        self.status_history[self.history_index+1:self.history_index+n_samples+1] = step.status
         self.history_index += n_samples
         return self.get_t()
 
     def get_history(self):
         t_history = self.t_history[:self.history_index+1]
         y_history = self.y_history[:,:self.history_index+1]
-        return History(self.get_t(), self.get_y(), t_history, y_history, self.status_counter)
+        status_history = self.status_history[:self.history_index+1]
+        return History(self.get_t(), self.get_y(), t_history, y_history, status_history, self.status_counter)
 
     def get_step_kwargs(self):
         return {}
@@ -76,14 +80,16 @@ class History():
     y: ArrayLike
     t_history: ArrayLike
     y_history: ArrayLike
+    status_history: ArrayLike
     status_counter: Counter
 
-    def plot(self, legend, ax=None):
+    def plot(self, legend, ax=None, **plot_kwargs):
         import matplotlib.pyplot as plt
         if ax is None:
             ax = plt.subplot()
-        ax.plot(self.t_history, self.y_history.T)
+        ax.plot(self.t_history, self.y_history.T, **plot_kwargs)
         ax.legend(legend)
+        return ax
 
 class Step(NamedTuple):
     t_history: ArrayLike
@@ -92,7 +98,7 @@ class Step(NamedTuple):
 
 class Simulator(ABC):
     run_klass = Run
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -108,6 +114,10 @@ class Simulator(ABC):
         propensity_function : Callable or None, optional
             If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
             Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
+        species_labels : List[str] or None, optional
+            A set of strings that matches the shape of y and provides human readable information detailing the system's species. By default None.
+        pathway_labels : List[str] or None, optional
+            A set of strings that matches the shape of k and provides human readable information detailing the system's reactions. By default None.
         """
         inhomogeneous = isinstance(k, Callable)
         if not inhomogeneous:
@@ -130,11 +140,13 @@ class Simulator(ABC):
         else:
             self.propensity_function = self.construct_propensity_function(k, kinetic_order_matrix, inhomogeneous, jit=jit)
 
+        self.species_lables = np.array(species_labels)
+        self.pathway_labels = np.array(pathway_labels)
 
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0)
 
-    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, **step_kwargs) -> History:
+    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs) -> History:
         """Simulate the reaction manifold between two time points given a starting state.
 
         Parameters
@@ -148,6 +160,9 @@ class Simulator(ABC):
         t_eval : ArrayLike, optional
             A vector of time points at which to evaluate the system and return in the final results.
             If None, evaluate at points chosen by the simulator, by default None.
+        halt : Callable, optional
+            A function with signature halt(t, y) => bool that stops execution on a return of True.
+            If None, always simulate to t_end. Defaults to None.
 
         Returns
         -------
@@ -169,6 +184,8 @@ class Simulator(ABC):
         while t < t_end:
             step = self.step(*run.current_state(), t_end, rng, t_eval, **step_kwargs, **run.get_step_kwargs())
             t = run.handle_step(step)
+            if halt is not None and halt(run.get_t(), run.get_y()):
+                break
 
         return run.get_history()
 

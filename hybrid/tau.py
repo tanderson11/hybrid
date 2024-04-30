@@ -176,8 +176,6 @@ class TauLeapSimulator(GillespieSimulator):
         # calculate g vector (if it depends on y) or use constant g vector
         g = g(y) if not isinstance(g, np.ndarray) else g
 
-        # WEIRD PROBLEM: if I insist on a smaller upper bound here, the results are WORSE in the mutant emergence problem
-
         # Currently, I disagree with Cao and Gillespie: I believe that it should be a max of y*epsilon/g and EPSILON
         # it's unfair in one branch insist that the propensity changes by no more than epsilon of its total value
         # and in the other branch insist that it changes by no more than potentially 100% of its value! when we make our leap
@@ -269,6 +267,7 @@ class TauLeapSimulator(GillespieSimulator):
 
     def tau_step(self, t, y, t_end, rng, t_eval):
         #import pudb; pudb.set_trace()
+        #import pdb; pdb.set_trace()
         propensities = self.propensity_function(t, y)
         total_propensity = np.sum(propensities)
 

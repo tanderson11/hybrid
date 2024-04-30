@@ -25,6 +25,7 @@ flameplot = "^1.1.0"
 parameterized = "^0.9.0"
 jupyterflame = { git = "https://github.com/H4dr1en/jupyterflame.git" }
 pudb = "^2024.1"
+ipdb = "^0.13.13"
 
 [build-system]
 requires = ["poetry-core"]

@@ -43,9 +43,29 @@ class PartitionScheme():
 class FixedThresholdPartitioner(PartitionScheme):
     threshold: float
 
-    def partition_function(self, y, propensities):
+    def partition_function(self, N, kinetic_order_matrix, y, propensities):
         stochastic = (propensities <= self.threshold) & (propensities != 0)
         return Partition(~stochastic, stochastic, np.full_like(propensities, self.threshold))
+
+@dataclass
+class NThresholdPartitioner(PartitionScheme):
+    threshold: float
+
+    def partition_function(self, N, kinetic_order_matrix, y, propensities):
+        # if any reactant < threshold, make that reaction stochastic
+        #import pdb; pdb.set_trace()
+        masked_kinetic_order = np.ma.masked_array(kinetic_order_matrix > 0, kinetic_order_matrix == 0)
+        a = (masked_kinetic_order.T * y).T
+        # axis = 0: look at minimum specimens across each reaction
+        reactant_mask = (np.nanmin(a, axis=0)) <= self.threshold
+        # if any product < threshold, make that reaction stochastic
+        masked_N = np.ma.masked_array(N > 0, N <= 0)
+        a = (masked_N.T * y).T
+        # axis = 0: look at minimum specimens across each reaction
+        product_mask = np.nanmin(a, axis=0) <= self.threshold
+
+        stochastic = (reactant_mask | product_mask).data
+        return Partition(~stochastic, stochastic, None)
 
 @dataclass(frozen=True)
 class Partition():
@@ -75,7 +95,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
     return partition_change_finder
 
 class HybridSimulator(Simulator):
-    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, **kwargs) -> None:
+    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -104,6 +124,10 @@ class HybridSimulator(Simulator):
         dydt_function : Callable, optional
             If not None, use the specified function a_ij(t,y) to calculate the derivative of the system at time t and state y.
             Specify this if there is a fast means of calculating the derivative, by default None.
+        species_labels : List[str] or None, optional
+            A set of strings that matches the shape of y and provides human readable information detailing the system's species. By default None.
+        pathway_labels : List[str] or None, optional
+            A set of strings that matches the shape of k and provides human readable information detailing the system's reactions. By default None.
         **kwargs : HybridSimulationOptions
             A valid selection of options specific to the Haseltine-Rawlings hybrid simulation algorithm.
             To see documentation of each option, inspect the class HybridSimulationOptions.
@@ -115,7 +139,7 @@ class HybridSimulator(Simulator):
         """
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
-        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
+        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         if isinstance(partition_function, PartitionScheme):
             partition_function = partition_function.partition_function
         self.partition_function = partition_function
@@ -242,7 +266,7 @@ class HybridSimulator(Simulator):
         if events is None: events = []
         """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs."""
         starting_propensities = self.propensity_function(t, y)
-        partition = self.partition_function(y, starting_propensities)
+        partition = self.partition_function(self.N, self.kinetic_order_matrix, y, starting_propensities)
 
         t_span = [t, t_end]
 
@@ -479,7 +503,8 @@ class HybridSimulationOptions():
         if self.approximate_rtot:
             assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
         else:
-            assert(self.contrived_no_reaction_rate is None)
+            if self.contrived_no_reaction_rate is not None:
+                print("Warning: contrived rate of no reaction defined but approximate_rtot is False")
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
