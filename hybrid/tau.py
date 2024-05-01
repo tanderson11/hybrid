@@ -266,17 +266,12 @@ class TauLeapSimulator(GillespieSimulator):
         return tau, update
 
     def tau_step(self, t, y, t_end, rng, t_eval):
-        #import pudb; pudb.set_trace()
-        #import pdb; pdb.set_trace()
+        pathway = None
         propensities = self.propensity_function(t, y)
         total_propensity = np.sum(propensities)
 
         critical_reactions = self.find_critical_reactions(y)
         critical_sum = np.sum(propensities[critical_reactions])
-
-        #import pdb; pdb.set_trace()
-
-        #if critical_reactions.any(): import pudb; pudb.set_trace()
 
         # if all reactions are critical, we won't tau leap, we'll just do gillespie
         if (critical_reactions).all():
@@ -307,7 +302,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau = tau_prime_prime
             #print(tau)
             #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
-            gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng)
+            pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng)
             tau_update = self.tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
 
@@ -317,4 +312,6 @@ class TauLeapSimulator(GillespieSimulator):
 
         t_history, y_history = self.expand_step_with_t_eval(t,y,tau,update,t_eval,t_end)
 
+        if pathway is not None:
+            return Step(t_history, y_history, status, pathway=pathway)
         return Step(t_history, y_history, status)

@@ -81,12 +81,13 @@ class GillespieSimulator(Simulator):
         pathway_rand = rng.random()
         entry = np.argmax(selections > pathway_rand)
         path_index = np.unravel_index(entry, selections.shape)
-
+        assert len(path_index) == 1
+        pathway = path_index[0]
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
         update = np.transpose(N[:,path_index])
         update = update.reshape((N.shape[0],))
-        return update
+        return pathway, update
 
     @staticmethod
     def expand_step_with_t_eval(t, y0, hitting_time, update, t_eval, t_end):
@@ -106,10 +107,10 @@ class GillespieSimulator(Simulator):
         hitting_time = self.find_hitting_time_inhomogenous(t, y, self.propensity_function, rng)
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
-        update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)
+        pathway, update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
-        return Step(t_history, y_history, GillespieStepStatus.stochastic)
+        return Step(t_history, y_history, GillespieStepStatus.stochastic, pathway=pathway)
 
     def homogeneous_gillespie_step(self, t, y, t_end, rng, t_eval):
         propensities = self.propensity_function(t, y)
@@ -121,7 +122,7 @@ class GillespieSimulator(Simulator):
             update = np.zeros_like(y)
             return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), GillespieStepStatus.t_end)
 
-        update = self.gillespie_update_proposal(self.N, propensities, rng)
+        pathway, update = self.gillespie_update_proposal(self.N, propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
-        return Step(t_history, y_history, GillespieStepStatus.stochastic)
+        return Step(t_history, y_history, GillespieStepStatus.stochastic, pathway)
