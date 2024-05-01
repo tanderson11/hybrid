@@ -19,7 +19,8 @@ class SimulatorArguments():
     t_span: tuple
     t_eval: tuple
 
-class TestSBMLMeta(type):
+class FilesystemTestMeta(type):
+    test_collection = None
     def __new__(mcs, names, bases, dct):
         def gen_test(test_name, specification, check_file):
             def test(self):
@@ -32,12 +33,15 @@ class TestSBMLMeta(type):
                 self._test_single()
             return test
 
-        for root, spec_name, specification, check_file in sbml_tests:
+        for root, spec_name, specification, check_file in mcs.test_collection:
             test_name = f'{os.path.basename(os.path.normpath(root))}_{spec_name}'
             dct[f'test_{test_name}'] = gen_test(test_name, specification, check_file)
         return type.__new__(mcs, names, bases, dct)
 
-class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
+class TestSBMLMeta(FilesystemTestMeta):
+    test_collection = sbml_tests
+
+class TestSpec(unittest.TestCase):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
     n = 10000
 
@@ -88,25 +92,25 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
         print(simulator_config)
         simulator = simulator_class(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), **simulator_config)
 
-        for i in range(self.n):
-            print(i)
-            result = simulator.simulate(self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval)
-            aligned = self.align_single_result(result, self.check_data['time'], targets, desired_species)
-            aligned_results.append(aligned)
+        align_results = self.align_results_factory(self.check_data['time'], targets, desired_species)
+        aligned_results = simulator.run_simulations(self.n, self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval, end_routine=align_results)
+
         return aligned_results
 
-    @staticmethod
-    def align_single_result(r, time, target_indices, species_names):
-        aligned = []
-        t_history = r.t_history
-        for t in time:
-            idx = np.argmin(np.abs(t-t_history))
-            aligned.append((r.t_history[idx], *[r.y_history[target_index,idx] for target_index in target_indices]))
-        indexed_results = pd.DataFrame.from_records(aligned, columns=['time', *species_names])
-        indexed_results['time'] = np.round(indexed_results['time'], 5)
-        indexed_results.set_index('time')
+    def align_results_factory(self, check_data, targets, desired_species):
+        def align_single_result(r, time, target_indices, species_names):
+            aligned = []
+            t_history = r.t_history
+            for t in time:
+                idx = np.argmin(np.abs(t-t_history))
+                aligned.append((r.t_history[idx], *[r.y_history[target_index,idx] for target_index in target_indices]))
+            indexed_results = pd.DataFrame.from_records(aligned, columns=['time', *species_names])
+            indexed_results['time'] = np.round(indexed_results['time'], 5)
+            indexed_results.set_index('time')
 
-        return indexed_results
+            return indexed_results
+
+        return align_single_result
 
     @staticmethod
     def z_score_for_mean(all_results, target_species, check_data, n):
@@ -119,6 +123,9 @@ class TestSBML(unittest.TestCase, metaclass=TestSBMLMeta):
         z_ts = pd.DataFrame(z_ts)
 
         return z_ts
+
+class TestSBML(TestSpec, metaclass=TestSBMLMeta):
+    pass
 
 if __name__ == '__main__':
     unittest.main()
