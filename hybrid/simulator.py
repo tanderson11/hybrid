@@ -1,4 +1,4 @@
-from typing import Callable, NamedTuple
+from typing import List, Callable, NamedTuple
 from enum import IntEnum
 from collections import Counter
 from dataclasses import dataclass
@@ -164,6 +164,43 @@ class Simulator(ABC):
 
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0)
+
+    def run_simulations(self, n_trials: int, t_span: ArrayLike, y0: ArrayLike, rng: List[np.random.Generator], end_routine: Callable=None, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs):
+        """Simulate the reaction manifold many times.
+
+        Parameters
+        ----------
+        n_trials : int
+            Number of times to run the experiment.
+        t_span : ArrayLike
+            A tuple of times `(t0, t_end)` to simulate between.
+        rng : List[np.random.Generator]
+            Either a single random generator, or a list of random generators with length == n_trials.
+        y0 : ArrayLike
+            A vector y_i of the quantity of species i at time 0.
+        end_routine : Callable, optional
+            Function to call on the result of each experiment to extract the wanted information. Defaults to None.
+        halt : Callable, optional
+            A function with signature halt(t, y) => bool that stops execution on a return of True.
+            If None, always simulate to t_end. Defaults to None.
+
+        Returns
+        -------
+        History
+            A list of artifacts, one for each trial, where each artifact is given by `end_routine(result_i)`.
+        """
+        if end_routine is None:
+            end_routine = lambda x: x
+        single_generator = isinstance(rng, np.random.Generator)
+        if not single_generator: assert len(rng) == n_trials
+        artifacts = []
+        for i in range(n_trials):
+            _rng = rng if single_generator else rng[i]
+
+            result = self.simulate(t_span, y0, _rng, t_eval, halt, **step_kwargs)
+            artifacts.append(end_routine(result))
+
+        return artifacts
 
     def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs) -> History:
         """Simulate the reaction manifold between two time points given a starting state.

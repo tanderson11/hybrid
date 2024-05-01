@@ -49,8 +49,8 @@ class TauRun(Run):
 
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, only_reactants_critical=True, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100) -> None:
-        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function)
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, only_reactants_critical=True, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100, species_labels=None, pathway_labels=None) -> None:
+        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         self.epsilon = epsilon
         self.n_c = critical_threshold
         self.rejection_multiple = rejection_multiple
