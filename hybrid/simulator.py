@@ -18,15 +18,21 @@ class Run():
         y0 = np.asarray(y0)
         history_length = int(history_length)
         self.history_index = 0
-
-        self.status_counter = Counter()
+        self.step_index = 0
 
         self.t_history = np.zeros(history_length)
         self.y_history = np.zeros((y0.shape[0], history_length))
+
+        self.step_indices = np.zeros(history_length)
         self.status_history = np.zeros(history_length)
+        self.pathway_history = np.zeros(history_length)
+
+        self.status_counter = Counter({})
 
         self.t_history[0]    = t0
         self.y_history[:, 0] = y0
+        self.status_history[0] = None
+        self.pathway_history[0] = np.inf
 
     def get_t(self):
         return self.t_history[self.history_index]
@@ -43,18 +49,27 @@ class Run():
         if step.status.was_rejected():
             return self.get_t()
 
+        # for t and y history, we add all the data contained in the step object
         n_samples = len(step.t_history)
         self.t_history[self.history_index+1:self.history_index+n_samples+1] = step.t_history
         self.y_history[:, self.history_index+1:self.history_index+n_samples+1] = step.y_history
-        self.status_history[self.history_index+1:self.history_index+n_samples+1] = step.status
         self.history_index += n_samples
+
+        # for other histories, we are only recording the fact of 1 step rather than n subsamples
+        self.status_history[self.step_index+1] = step.status
+        self.pathway_history[self.step_index+1] = step.pathway
+        self.step_indices[self.step_index+1] = self.history_index
+        self.step_index += 1
         return self.get_t()
 
     def get_history(self):
         t_history = self.t_history[:self.history_index+1]
         y_history = self.y_history[:,:self.history_index+1]
-        status_history = self.status_history[:self.history_index+1]
-        return History(self.get_t(), self.get_y(), t_history, y_history, status_history, self.status_counter)
+
+        step_indices = self.step_indices[:self.step_index+1]
+        status_history = self.status_history[:self.step_index+1]
+        pathway_history = self.pathway_history[:self.step_index+1]
+        return History(self.get_t(), self.get_y(), t_history, y_history, step_indices, status_history, pathway_history, self.status_counter, Counter(pathway_history))
 
     def get_step_kwargs(self):
         return {}
@@ -80,8 +95,11 @@ class History():
     y: ArrayLike
     t_history: ArrayLike
     y_history: ArrayLike
+    step_indices: ArrayLike
     status_history: ArrayLike
+    pathway_history: ArrayLike
     status_counter: Counter
+    pathway_counter: Counter
 
     def plot(self, legend, ax=None, **plot_kwargs):
         import matplotlib.pyplot as plt
@@ -95,6 +113,7 @@ class Step(NamedTuple):
     t_history: ArrayLike
     y_history: ArrayLike
     status: StepStatus
+    pathway: int = np.inf
 
 class Simulator(ABC):
     run_klass = Run

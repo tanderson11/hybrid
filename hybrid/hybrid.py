@@ -24,11 +24,14 @@ class HybridStepStatus(StepStatus):
     def event_like(self):
         return self > HybridStepStatus.t_end
 
+CONTRIVED_PATHWAY = -1
+
 class StepUpdate(NamedTuple):
     t_history: np.ndarray
     y_history: np.ndarray
     status: HybridStepStatus
     nfev: int
+    pathway: int = np.inf
 
 @dataclass
 class PartitionScheme():
@@ -263,8 +266,9 @@ class HybridSimulator(Simulator):
         return jit_calculate_propensities
 
     def step(self, t, y, t_end, rng, t_eval, events=None):
-        if events is None: events = []
         """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs."""
+        if events is None: events = []
+
         starting_propensities = self.propensity_function(t, y)
         partition = self.partition_function(self.N, self.kinetic_order_matrix, y, starting_propensities)
 
@@ -278,7 +282,7 @@ class HybridSimulator(Simulator):
             next_discontinuity = np.inf
         else:
             discontinuity_index = np.argmin(discontinuity_mask)
-            # (all discontinuities passed because  our mininmum satisfying value is True, so all values are true)
+            # (all discontinuities passed because our mininmum satisfying value is True, so all values are true)
             if discontinuity_mask[discontinuity_index]:
                 next_discontinuity = np.inf
             else:
@@ -444,7 +448,7 @@ class HybridSimulator(Simulator):
 
         # don't apply any update if our selection was the contrived rate of no reaction
         if self.simulation_options.approximate_rtot and np.squeeze(path_index) == len(valid_selections)-1:
-            return StepUpdate(t_history, y_history, HybridStepStatus.contrived_no_reaction, step_solved.nfev)
+            return StepUpdate(t_history, y_history, HybridStepStatus.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
 
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
@@ -452,7 +456,8 @@ class HybridSimulator(Simulator):
         update = update.reshape(y.shape)
         y_history[:, -1] += update
 
-        return StepUpdate(t_history, y_history, status,step_solved.nfev)
+        assert len(path_index)==1
+        return StepUpdate(t_history, y_history, status, step_solved.nfev, pathway=path_index[0])
 
 class HybridNotImplementedError(NotImplementedError):
     """Attempted to use a hybrid algorithm feature that has not been implemented."""
