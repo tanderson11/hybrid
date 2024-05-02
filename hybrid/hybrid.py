@@ -482,9 +482,9 @@ class HybridSimulationOptions():
             specified if and only if approximate_rtot=True: a contrived rate
             of no reaction to ensure that no timestep between stochastic events
             becomes too large. Defaults to None.
-        deqs (bool, optional):
-            if True, approximate the fast reactions as differential equations.
-            If False, treat the fast reactions as Langevin equations. Defaults to True.
+        fast_scale (str, optional):
+            if 'deterministic', approximate the fast reactions as differential equations.
+            If 'langevin', treat the fast reactions as Langevin equations. Defaults to 'deterministic'.
         round_randomly (bool, optional):
             if True, round species quantities randomly in proportion to decimal
             (so 1.8 copies of X becomes 2 with 80% probability). If False, round conventionally.
@@ -495,17 +495,17 @@ class HybridSimulationOptions():
         partition_fraction_for_halt (float, optional):
             float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
-            This avoids numerical instability around the threshold. Defaults to 0.9 (90% of threshold)
+            This avoids numerical instability around the threshold. Defaults to None.
     """
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
-    deqs: bool = True
+    fast_scale: str = 'deterministic'
     round_randomly: bool = True
     halt_on_partition_change: bool = False
-    partition_fraction_for_halt: float = 0.9
+    partition_fraction_for_halt: float = None
 
     def __post_init__(self):
-        if not self.deqs: raise HybridNotImplementedError("simulation was configured with deqs=False, but Langevin equations are not implemented.")
+        if not self.fast_scale == 'deterministic': raise HybridNotImplementedError("simulation was configured with fast_scale!='deterministic', but Langevin equations are not implemented.")
         if self.approximate_rtot:
             assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
         else:
