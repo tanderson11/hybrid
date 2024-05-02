@@ -400,6 +400,7 @@ class HybridSimulator(Simulator):
             else: # nobreak
                 assert False, f"Couldn't assign a status to event. Event index = {event_index}. event_cutoffs={event_type_cutoffs}. event_types={event_types}."
 
+        ## now we know our step status. what shall we do about it?
         if status == HybridStepStatus.partition_change:
             print(f"Stopping for partition change. t={t_event}")
 
