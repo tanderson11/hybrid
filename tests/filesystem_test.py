@@ -3,6 +3,7 @@ import os
 from dataclasses import dataclass
 import numpy as np
 import pandas as pd
+import pathlib
 
 from hybrid.simulate import SIMULATORS
 
@@ -34,7 +35,12 @@ class TestSpec(unittest.TestCase):
     TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
     n = 2
 
-    def do_simulations(self, end_routine):
+    # wherever we are, save test output to test_output folder
+    test_out = './test_output/'
+
+    # must define _test_single()
+
+    def run_simulations(self, end_routine):
         processed_results = []
         rng = np.random.default_rng()
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
@@ -49,3 +55,21 @@ class TestSpec(unittest.TestCase):
         processed_results = simulator.run_simulations(self.n, self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval, end_routine=end_routine)
 
         return processed_results
+
+class EndpointTest(TestSpec):
+    """A test of a configuration that relies only on the final y value."""
+    def end_routine_factory(self):
+        def end_routine(result):
+            return self.specification.model.y_to_dict(result.y)
+        return end_routine
+
+    def _test_single(self):
+        results = self.do_simulations(self.end_routine_factory())
+        df = pd.DataFrame(results)
+        self.df = df
+
+    def tearDown(self):
+        # save results
+        out = os.path.join(self.test_out, self.test_name)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+        self.df.to_csv(os.path.join(out, f'n={self.n}_tend_results.csv'))

@@ -1,5 +1,5 @@
+from dataclasses import dataclass
 import numpy as np
-from typing import NamedTuple
 from numba import jit as numbajit
 from scipy.integrate import quad
 from scipy.optimize import fsolve
@@ -10,6 +10,10 @@ class GillespieStepStatus(StepStatus):
     rejected = -1
     t_end = 0
     stochastic = 1
+
+@dataclass(frozen=True)
+class GillespieOptions():
+    pass
 
 class GillespieSimulator(Simulator):
     def step(self, t, y, t_end, rng, t_eval):

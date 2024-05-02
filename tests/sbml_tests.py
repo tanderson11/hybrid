@@ -53,7 +53,7 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         targets = [all_species.index(s) for s in desired_species]
         align_results = self.align_results_factory(self.check_data['time'], targets, desired_species)
 
-        results = self.do_simulations(align_results)
+        results = self.run_simulations(align_results)
         for df in results:
             df.set_index('time', inplace=True)
         df = pd.concat(results, axis=1)

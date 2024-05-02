@@ -1,5 +1,6 @@
 from typing import Callable, Union
 from enum import Enum
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -47,22 +48,35 @@ class TauRun(Run):
     def get_step_kwargs(self):
         return {'do_gillespie': self.forced_gillespie_steps > 0}
 
+@dataclass(frozen=True)
+class TauLeapOptions():
+    leap_type: str = 'species'
+    epsilon: float=0.01
+    rejection_multiple: float=10
+    gillespie_steps_on_rejection: int=100
+    critical_threshold: int=10
+    species_creation_is_critical: bool=False
+    only_reactants_critical: bool=True
+
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, leap_type='species', species_creation_is_critical=False, only_reactants_critical=True, epsilon=0.01, critical_threshold=10, rejection_multiple=10, gillespie_steps_on_rejection=100, species_labels=None, pathway_labels=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
         super().__init__(k, N, kinetic_order_matrix, jit, propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
-        self.epsilon = epsilon
-        self.n_c = critical_threshold
-        self.rejection_multiple = rejection_multiple
-        self.gillespie_steps_on_rejection = gillespie_steps_on_rejection
-        self.leap_type = TauLeapers(leap_type)
+
+        simulator_options = TauLeapOptions(**option_kwargs)
+
+        self.epsilon = simulator_options.epsilon
+        self.n_c = simulator_options.critical_threshold
+        self.rejection_multiple = simulator_options.rejection_multiple
+        self.gillespie_steps_on_rejection = simulator_options.gillespie_steps_on_rejection
+        self.leap_type = TauLeapers(simulator_options.leap_type)
         if self.leap_type == TauLeapers.gp:
             print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
         if self.leap_type == TauLeapers.species:
             self.g = self.build_g_function()
 
-        self.species_creation_is_critical = species_creation_is_critical
-        self.only_reactants_critical = only_reactants_critical
+        self.species_creation_is_critical = simulator_options.species_creation_is_critical
+        self.only_reactants_critical = simulator_options.only_reactants_critical
 
         if self.inhomogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation. Will assume that rates are constant within leaps.")
