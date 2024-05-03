@@ -2,28 +2,16 @@ import numpy as np
 from numpy.typing import ArrayLike
 from typing import Callable
 
-
 from hybrid.gillespie import GillespieSimulator
 from hybrid.hybrid import HybridSimulator
 from hybrid.tau import TauLeapSimulator
-from hybrid._factories import SimulatorFactory, HybridSimulatorFactory, TauLeapSimulatorFactory, GillespieSimulatorFactory
+from hybrid._factories import load_simulator_factory, SimulatorFactoryPathParser
 
 SIMULATORS = {
     'gillespie': GillespieSimulator,
     'haseltinerawlings': HybridSimulator,
     'tauleap': TauLeapSimulator,
 }
-
-FACTORIES = {
-    'gillespie': GillespieSimulatorFactory,
-    'haseltinerawlings': HybridSimulatorFactory,
-    'tau': TauLeapSimulatorFactory,
-}
-
-def load_factory(file, format='yaml'):
-    d = SimulatorFactory.load_dictionary(file, format=format)
-    factory_klass = FACTORIES[d['simulator']]
-    return factory_klass.from_dict(d)
 
 def simulate(t_span: ArrayLike, y0: ArrayLike, k: Callable[[float], ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, method='haseltinerawlings', **simulator_kwargs):
     """Simulate a system of reactions over a span of time given an initial state using `method`.
