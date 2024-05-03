@@ -66,9 +66,6 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
 
         self.test_result = self.SBMLTestResult(all_results, self.check_data, z_ts, y_ts)
 
-        # assert something about zscores
-        # TK
-
     @staticmethod
     def z_score_for_mean(all_results, target_species, check_data, n):
         # https://github.com/sbmlteam/sbml-test-suite/blob/release/cases/stochastic/DSMTS-userguide-31v2.pdf

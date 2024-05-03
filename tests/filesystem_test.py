@@ -5,8 +5,6 @@ import numpy as np
 import pandas as pd
 import pathlib
 
-from hybrid.simulate import SIMULATORS
-
 @dataclass
 class SimulatorArguments():
     t_span: tuple
