@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 # number of tasks (processes) per node
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=16G
 #SBATCH --mail-type=end
 #SBATCH --mail-user=tander64@jhu.edu
 
