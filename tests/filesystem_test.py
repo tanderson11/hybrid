@@ -43,13 +43,11 @@ class TestSpec(unittest.TestCase):
         processed_results = []
         rng = np.random.default_rng()
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
-        simulator_config = self.specification.simulator_config.copy()
-        simulator_class = simulator_config.pop('simulator')
-        simulator_class = SIMULATORS[simulator_class]
+        factory = self.specification.simulator_config
 
         k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
-        print(simulator_config)
-        simulator = simulator_class(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), **simulator_config)
+
+        simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
 
         processed_results = simulator.run_simulations(self.n, self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval, end_routine=end_routine)
 
