@@ -104,7 +104,7 @@ class Run():
         step_indices = self.step_indices[:self.step_index+1]
         status_history = self.status_history[:self.step_index+1]
         pathway_history = self.pathway_history[:self.step_index+1]
-        History(self.get_t(), self.get_y(), t_history, y_history, step_indices, status_history, pathway_history, self.status_counter, Counter(pathway_history))
+        return History(self.get_t(), self.get_y(), t_history, y_history, step_indices, status_history, pathway_history, self.status_counter, Counter(pathway_history))
 
     def get_step_kwargs(self):
         return {}

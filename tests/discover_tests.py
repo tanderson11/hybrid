@@ -2,16 +2,19 @@ import re
 import os
 import glob
 from typing import NamedTuple
+from itertools import product
 
 import reactionmodel.parser
 
 from hybrid.parse import PreconfiguredSimulatorLoader
 
-def discover_tests(root, test_directory_pattern='*'):
+def discover_tests(root, test_directory_pattern='*', include_check=False, **spec_kwargs):
     tests = []
     test_dirs = glob.glob(os.path.join(root, test_directory_pattern))
     for t_dir in test_dirs:
-        extend_with_tests_from_dir(tests, t_dir)
+        if not os.path.isdir(t_dir):
+            continue
+        extend_with_tests_from_dir(tests, t_dir, include_check=include_check, **spec_kwargs)
     return tests
 
 def get_path_from_check_string(check_string, prefix, directory_name, filename):
@@ -37,20 +40,6 @@ def get_path_tuple(root, check):
 
     return SpecificationPaths(model_path, parameters_path, config_path, ic_path)
 
-def extend_via_checks(tests, root, specifications):
-    # use the subdirectories of root/checks to determine what tests exist
-    tests_to_do = []
-    for check in glob.glob(os.path.join(root, 'checks', '*/')):
-        check_dir_root = check.split('/')[-2]
-        tests_to_do.append((check_dir_root, specifications[check_dir_root], check))
-
-    for spec_name, specification, check_dir in tests_to_do:
-        # each check directory contains 1 CSV file with a name like check{SBML_TEST_NUMBER}.csv
-        assert(len(glob.glob(os.path.join(check_dir, 'check*.csv')))) == 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
-        check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
-        tests.append((root, spec_name, specification, check_file))
-    return tests
-
 def get_files(root, individual, collection, pattern):
     if os.path.isfile(os.path.join(root, individual)):
         return [os.path.join(root, individual)]
@@ -64,30 +53,59 @@ def load_specification(model_path, params_path, config_path, ic_path):
 
     return reactionmodel.parser.ParseResults(model, parameters, initial_condition, simulation_config)
 
-def extend_with_tests_from_dir(tests, dir):
-    # crawl dir to find all tests in that dir and add them to the list `tests` passed as an argument
-    print(f"Extending test suite from {dir}\nAll directories within {os.path.join(dir, 'checks/')} that match specifications in {dir} will be used as tests.")
-    model_paths  = get_files(dir, 'model.yaml', 'models', 'model*.yaml')
-    params_paths = get_files(dir, 'parameters.yaml', 'parameters', 'parameters*.yaml')
-    config_paths = get_files(dir, 'config.yaml', 'configurations', 'config*.yaml')
-    ic_paths     = get_files(dir, 'ic.yaml', 'initial_conditions', 'initial*.yaml')
+def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'parameters', config_base = 'simulator', initial_base = 'initial'):
+    model_paths  = get_files(dir, f'{model_base}.{format}', 'models', f'*.{format}')
+    params_paths = get_files(dir, f'{params_base}.{format}', 'parameters', f'*.{format}')
+    config_paths = get_files(dir, f'{config_base}.{format}', 'simulators', f'*.{format}')
+    ic_paths     = get_files(dir, f'{initial_base}.{format}', 'initial_conditions', f'*.{format}')
     specifications = {}
-    for model_path in model_paths:
-        for params_path in params_paths:
-            for config_path in config_paths:
-                for ic_path in ic_paths:
-                    specification = load_specification(model_path, params_path, config_path, ic_path)
-                    # use the parameter and ic file names as a unique identifier for this combination
-                    # later, we will look up all the combinations that we have test data for, and run simulations to check
-                    model_match = re.search('[a-z]+([0-9]+)\.yaml', model_path)
-                    config_match = re.search('[a-z]+([0-9]+)\.yaml', config_path)
-                    param_match = re.search('[a-z]+([0-9]+)\.yaml', params_path)
-                    ic_match = re.search('[a-z]+([0-9]+)\.yaml', ic_path)
-                    matches = [('m', model_match), ('c', config_match), ('p', param_match), ('i', ic_match)]
-                    identifier = ''
-                    for id_str, match in matches:
-                        if match:
-                            identifier += id_str + str(match[1])
-                    # if identifier == '': all of the configuration files lived in root directory, so the check should just live in the root of the check directory
-                    specifications[identifier] = specification
-    return extend_via_checks(tests, dir, specifications)
+    for model_path, params_path, config_path, ic_path in product(model_paths, params_paths, config_paths, ic_paths):
+        specification = load_specification(model_path, params_path, config_path, ic_path)
+        # use the parameter and ic file names as a unique identifier for this combination
+        # later, we will look up all the combinations that we have test data for, and run simulations to check
+        model = os.path.basename(model_path).split('.')[0]
+        model = model if model != model_base else None
+
+        params = os.path.basename(params_path).split('.')[0]
+        params = params if params != params_base else None
+
+        simulator = os.path.basename(config_path).split('.')[0]
+        simulator = simulator if simulator != config_base else None
+
+        initial = os.path.basename(ic_path).split('.')[0]
+        initial = initial if initial != initial_base else None
+
+        names = [model, params, initial, simulator]
+        names = [n for n in names if n is not None]
+        identifier = ''
+        for i, name in enumerate(names):
+            if i != 0:
+                identifier += '_'
+            identifier += name
+        # if identifier == '': all of the configuration files lived in root directory, so the check should just live in the root of the check directory
+        specifications[identifier] = specification
+    return specifications
+
+def specs_to_tests(root, specs, check_container='checks', include_check=False):
+    tests = []
+    for spec_name, specification in specs.items():
+        check_file = None
+        # if we're including checks, skip if the specification permutation does not have a check folder
+        if include_check:
+            check_dir = os.path.join(root, check_container, spec_name)
+            if (not os.path.exists(check_dir)) or (not os.path.isdir(check_dir)):
+                continue
+            assert(len(glob.glob(os.path.join(check_dir, 'check*.csv')))) == 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
+            check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
+            #print(check_file)
+
+        tests.append((root, spec_name, specification, check_file))
+
+    return tests
+
+def extend_with_tests_from_dir(tests, dir, include_check=False, **spec_kwargs):
+    # crawl dir to find all tests in that dir and add them to the list `tests` passed as an argument
+    print(f"Extending test suite from {dir}\n")
+    new_specs = specs_from_dir(dir, **spec_kwargs)
+    new_tests = specs_to_tests(dir, new_specs, include_check=include_check)
+    return tests.extend(new_tests)

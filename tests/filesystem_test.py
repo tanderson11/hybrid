@@ -19,7 +19,8 @@ class FilesystemTestMeta(type):
                 self.specification = specification
                 self.check_file = check_file
                 # load the csv of analytic/high quality simulation results
-                self.check_data = pd.read_csv(self.check_file)
+                if check_file is not None:
+                    self.check_data = pd.read_csv(self.check_file)
                 print("About to run test.")
                 self._test_single()
             return test

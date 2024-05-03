@@ -8,7 +8,7 @@ from typing import NamedTuple
 from tests.discover_tests import discover_tests
 from tests.filesystem_test import FilesystemTestMeta, TestSpec
 
-sbml_tests = discover_tests(os.path.join(os.path.dirname(__file__), "sbml-tests/"), 'sbml-*')
+sbml_tests = discover_tests(os.path.join(os.path.dirname(__file__), "sbml-tests/"), 'sbml-*', include_check=True)
 
 class TestSBMLMeta(FilesystemTestMeta):
     test_collection = sbml_tests
