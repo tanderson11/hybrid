@@ -1,5 +1,2 @@
 simulator_config:
-  simulator: haseltinerawlings
-  partition:
-    name: FixedThresholdPartitioner
-    threshold: 100.0
+  name: gillespie
