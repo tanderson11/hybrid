@@ -5,7 +5,6 @@ from typing import Callable
 from hybrid.gillespie import GillespieSimulator
 from hybrid.hybrid import HybridSimulator
 from hybrid.tau import TauLeapSimulator
-from hybrid._factories import load_simulator_factory, SimulatorFactoryPathParser
 
 SIMULATORS = {
     'gillespie': GillespieSimulator,

@@ -142,7 +142,7 @@ class SimulatorFactoryPathParser(ConfigParser):
 
 @dataclass
 class PreconfiguredSimulatorLoader(ConfigParser):
-    preconfigured_root = os.path.join(__file__, 'simulators')
+    preconfigured_root = os.path.join(os.path.dirname(__file__), 'simulators')
     format = 'yaml'
 
     name: str
@@ -150,4 +150,4 @@ class PreconfiguredSimulatorLoader(ConfigParser):
     @classmethod
     def from_dict(cls, config_dictionary):
         parser = cls(**config_dictionary)
-        return load_simulator_factory(os.path.join(cls.preconfigured_root, parser.name, cls.format), format=cls.format)
+        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{parser.name}.{cls.format}'), format=cls.format)

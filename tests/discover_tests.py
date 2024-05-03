@@ -5,8 +5,7 @@ from typing import NamedTuple
 
 import reactionmodel.parser
 
-from hybrid.parseconfig import HybridConfigParser
-
+from hybrid.parse import PreconfiguredSimulatorLoader
 
 def discover_tests(root, test_directory_pattern='*'):
     tests = []
@@ -60,7 +59,7 @@ def get_files(root, individual, collection, pattern):
 def load_specification(model_path, params_path, config_path, ic_path):
     model = reactionmodel.parser.load(model_path).model
     parameters = reactionmodel.parser.load(params_path).parameters
-    simulation_config = reactionmodel.parser.load(config_path, ConfigParser=HybridConfigParser).simulator_config
+    simulation_config = reactionmodel.parser.load(config_path, ConfigParser=PreconfiguredSimulatorLoader).simulator_config
     initial_condition = reactionmodel.parser.load(ic_path).initial_condition
 
     return reactionmodel.parser.ParseResults(model, parameters, initial_condition, simulation_config)
