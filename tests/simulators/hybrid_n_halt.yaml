@@ -1,0 +1,13 @@
+version: '1.0'
+options:
+  approximate_rtot: false
+  contrived_no_reaction_rate: null
+  fast_scale: deterministic
+  round_randomly: true
+  halt_on_partition_change: true
+  partition_fraction_for_halt: 0.9
+partition_scheme:
+  threshold: 100.0
+  partition_scheme_type: NThresholdPartitioner
+description: 'Species partitioning n_T=100.0; halt on partition change.'
+simulator: haseltinerawlings

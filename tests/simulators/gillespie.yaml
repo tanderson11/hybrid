@@ -1,0 +1,4 @@
+version: '1.0'
+options: {}
+description: Gillespie's original SSA for homogenous or time inhomogenous processes.
+simulator: gillespie
