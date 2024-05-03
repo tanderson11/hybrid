@@ -13,7 +13,7 @@
 module purge
 module load gcc/11.4.0
 module load python/3.9.15
-module load foss/2023a
+module load foss/2022b
 module load poetry
 
 #### execute code
