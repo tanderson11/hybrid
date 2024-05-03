@@ -10,10 +10,6 @@ from tests.filesystem_test import FilesystemTestMeta, TestSpec
 
 sbml_tests = discover_tests(os.path.join(os.path.dirname(__file__), "sbml-tests/"), 'sbml-*')
 
-# wherever we are, save test output to test_output folder
-test_out = './test_output/'
-
-
 class TestSBMLMeta(FilesystemTestMeta):
     test_collection = sbml_tests
 
@@ -37,15 +33,18 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         results_df: pd.DataFrame
         check_df: pd.DataFrame
         z_scores_for_mean_by_species: pd.DataFrame
+        y_scores_for_std_by_species: pd.DataFrame
 
     def tearDown(self):
         # save results
         results_table = self.test_result.results_df
         z_ts = self.test_result.z_scores_for_mean_by_species
-        out = os.path.join(test_out, self.test_name)
+        y_ts = self.test_result.y_scores_for_std_by_species
+        out = os.path.join(self.test_out, self.test_name)
         pathlib.Path(out).mkdir(parents=True, exist_ok=True)
         results_table.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
         z_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_zscores.csv'))
+        y_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_yscores.csv'))
 
     def _test_single(self):
         desired_species = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
@@ -63,8 +62,9 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(all_results.columns)]
 
         z_ts = self.z_score_for_mean(all_results, check_targets, self.check_data, self.n)
+        y_ts = self.y_score_for_std(all_results, check_targets, self.check_data, self.n)
 
-        self.test_result = self.SBMLTestResult(all_results, self.check_data, z_ts)
+        self.test_result = self.SBMLTestResult(all_results, self.check_data, z_ts, y_ts)
 
         # assert something about zscores
         # TK
@@ -80,6 +80,17 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         z_ts = pd.DataFrame(z_ts)
 
         return z_ts
+
+    @staticmethod
+    def y_score_for_std(all_results, target_species, check_data, n):
+        y_ts = {}
+        for species in target_species:
+            y_t = (all_results[f'{species}-sd']**2/check_data[f'{species}-sd']**2 - 1) * np.sqrt(n/2)
+            y_ts[species] = y_t
+
+        y_ts = pd.DataFrame(y_ts)
+
+        return y_ts
 
 if __name__ == '__main__':
     unittest.main()

@@ -32,13 +32,12 @@ class FilesystemTestMeta(type):
         return type.__new__(mcs, names, bases, dct)
 
 class TestSpec(unittest.TestCase):
-    TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-    n = 2
-
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
+    TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
+    n = 10000
 
-    # must define _test_single()
+    # subclasses must define _test_single()
 
     def run_simulations(self, end_routine):
         processed_results = []
