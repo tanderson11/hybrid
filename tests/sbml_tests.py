@@ -5,7 +5,7 @@ import pandas as pd
 import pathlib
 from typing import NamedTuple
 
-from tests.discover_tests import discover_tests
+from tests.discover import discover_tests
 from tests.filesystem_test import FilesystemTestMeta, TestSpec
 
 sbml_tests = discover_tests(os.path.join(os.path.dirname(__file__), "sbml-tests/"), 'sbml-*', include_check=True)
