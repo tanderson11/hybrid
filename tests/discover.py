@@ -71,7 +71,7 @@ def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'para
         initial = os.path.basename(ic_path).split('.')[0]
         initial = initial if initial != initial_base else None
 
-        names = [model, params, initial, simulator]
+        names = [model, params, t, initial, simulator]
         names = [n for n in names if n is not None]
         identifier = ''
         for i, name in enumerate(names):
@@ -91,9 +91,10 @@ def specs_to_tests(root, specs, check_container='checks', include_check=False):
             check_dir = os.path.join(root, check_container, spec_name)
             if (not os.path.exists(check_dir)) or (not os.path.isdir(check_dir)):
                 continue
-            assert(len(glob.glob(os.path.join(check_dir, 'check*.csv')))) == 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
-            check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
-            #print(check_file)
+            n_checks = len(glob.glob(os.path.join(check_dir, 'check*.csv')))
+            assert n_checks <= 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
+            if n_checks == 1:
+                check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
 
         tests.append((root, spec_name, specification, check_file))
 

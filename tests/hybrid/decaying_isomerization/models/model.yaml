@@ -1,0 +1,18 @@
+species:
+- name: S1
+- name: S2
+- name: S3
+
+reactions:
+- description: S1 -> S2
+  reactants: [S1]
+  products: [S2]
+  k: 'c1'
+- description: S2 -> S1
+  reactants: [S2]
+  products: [S1]
+  k: 'c2'
+- description: S2 -> S3
+  reactants: [S2]
+  products: [S3]
+  k: 'c3'

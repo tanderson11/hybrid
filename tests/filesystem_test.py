@@ -42,7 +42,7 @@ class TestSpec(unittest.TestCase):
 
         k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
 
-        simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
+        simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), species_labels=self.specification.model.legend())
 
         processed_results = simulator.run_simulations(self.n, self.specification.t.t_span, initial_condition, rng=rng, t_eval=self.specification.t.t_eval, end_routine=end_routine)
 
@@ -50,13 +50,11 @@ class TestSpec(unittest.TestCase):
 
 class EndpointTest(TestSpec):
     """A test of a configuration that relies only on the final y value."""
-    def end_routine_factory(self):
-        def end_routine(result):
-            return self.specification.model.y_to_dict(result.y)
-        return end_routine
+    def end_routine(self, result):
+        return self.specification.model.y_to_dict(result.y)
 
     def _test_single(self):
-        results = self.run_simulations(self.end_routine_factory())
+        results = self.run_simulations(self.end_routine)
         df = pd.DataFrame(results)
         self.df = df
 
