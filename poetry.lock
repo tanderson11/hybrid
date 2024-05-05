@@ -1039,14 +1039,14 @@ test = ["ipykernel", "jsonschema", "pytest (>=3.6.0)", "pytest-cov", "pytz"]
 
 [[package]]
 name = "ismember"
-version = "1.0.3"
+version = "1.0.4"
 description = "Python package ismember returns array elements that are members of set array."
 category = "dev"
 optional = false
 python-versions = ">=3"
 files = [
-    {file = "ismember-1.0.3-py3-none-any.whl", hash = "sha256:43e1b903803bbe77ab3a58a4bd5b643238669b9cdfbd420fc51e0dc6d640d0ee"},
-    {file = "ismember-1.0.3.tar.gz", hash = "sha256:f8f013b7faed24145f44e77e6c6960dfec5835c54e4d79f5646089e6d978cce8"},
+    {file = "ismember-1.0.4-py3-none-any.whl", hash = "sha256:59c248b472485615e23dd8459eec01752dab581c50dc52da3279f4dad440c49c"},
+    {file = "ismember-1.0.4.tar.gz", hash = "sha256:63ba905ebc602f63dbeecf2f3781554058e87bc3bdcc879f3047e8ab323c7198"},
 ]
 
 [package.dependencies]
@@ -2412,18 +2412,17 @@ files = [
 
 [[package]]
 name = "pygments"
-version = "2.17.2"
+version = "2.18.0"
 description = "Pygments is a syntax highlighting package written in Python."
 category = "main"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "pygments-2.17.2-py3-none-any.whl", hash = "sha256:b27c2826c47d0f3219f29554824c30c5e8945175d888647acd804ddd04af846c"},
-    {file = "pygments-2.17.2.tar.gz", hash = "sha256:da46cec9fd2de5be3a8a784f434e4c4ab670b4ff54d605c4c2717e9d49c4c367"},
+    {file = "pygments-2.18.0-py3-none-any.whl", hash = "sha256:b8e6aca0523f3ab76fee51799c488e38782ac06eafcf95e7ba832985c8e7b13a"},
+    {file = "pygments-2.18.0.tar.gz", hash = "sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199"},
 ]
 
 [package.extras]
-plugins = ["importlib-metadata"]
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
@@ -2748,7 +2747,7 @@ simpleeval = "^0.9.13"
 type = "git"
 url = "https://github.com/tanderson11/reactionmodel.git"
 reference = "HEAD"
-resolved_reference = "b84464d71208629259cf58ed4609ce5ce10db6c8"
+resolved_reference = "50194e9e9249f075d0a0464b7e660d6d9ee18697"
 
 [[package]]
 name = "referencing"

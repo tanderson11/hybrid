@@ -14,6 +14,11 @@ class TestSBMLMeta(FilesystemTestMeta):
     test_collection = sbml_tests
 
 class TestSBML(TestSpec, metaclass=TestSBMLMeta):
+    def apply_overrides(self, specification):
+        specification = super().apply_overrides(specification)
+        specification.t.t_eval = np.linspace(0.0, 50.0, 51)
+        return specification
+
     def align_results_factory(self, time, targets, desired_species):
         def align_single_result(r):
             aligned = []
@@ -56,7 +61,7 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         for df in results:
             df.set_index('time', inplace=True)
         df = pd.concat(results, axis=1)
-        all_results = pd.concat([df.groupby(by=df.columns, axis=1).mean(), df.groupby(by=df.columns, axis=1).std()], axis=1)
+        all_results = pd.concat([df.T.groupby(by=df.columns).mean().T, df.T.groupby(by=df.columns).std().T], axis=1)
 
         check_targets = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
         all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(all_results.columns)]

@@ -1,14 +1,8 @@
 import unittest
 import os
-from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import pathlib
-
-@dataclass
-class SimulatorArguments():
-    t_span: tuple
-    t_eval: tuple
 
 class FilesystemTestMeta(type):
     test_collection = None
@@ -16,7 +10,7 @@ class FilesystemTestMeta(type):
         def gen_test(test_name, specification, check_file):
             def test(self):
                 self.test_name = test_name
-                self.specification = specification
+                self.specification = self.apply_overrides(specification)
                 self.check_file = check_file
                 # load the csv of analytic/high quality simulation results
                 if check_file is not None:
@@ -33,10 +27,12 @@ class FilesystemTestMeta(type):
 class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
-    TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
-    n = 10000
+    n = 10
 
     # subclasses must define _test_single()
+
+    def apply_overrides(self, specification):
+        return specification
 
     def run_simulations(self, end_routine):
         processed_results = []
@@ -48,7 +44,7 @@ class TestSpec(unittest.TestCase):
 
         simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
 
-        processed_results = simulator.run_simulations(self.n, self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval, end_routine=end_routine)
+        processed_results = simulator.run_simulations(self.n, self.specification.t.t_span, initial_condition, rng=rng, t_eval=self.specification.t.t_eval, end_routine=end_routine)
 
         return processed_results
 
@@ -60,7 +56,7 @@ class EndpointTest(TestSpec):
         return end_routine
 
     def _test_single(self):
-        results = self.do_simulations(self.end_routine_factory())
+        results = self.run_simulations(self.end_routine_factory())
         df = pd.DataFrame(results)
         self.df = df
 

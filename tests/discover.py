@@ -45,22 +45,15 @@ def get_files(root, individual, collection, pattern):
         return [os.path.join(root, individual)]
     return glob.glob(os.path.join(root, collection, pattern))
 
-def load_specification(model_path, params_path, config_path, ic_path):
-    model = reactionmodel.parser.load(model_path).model
-    parameters = reactionmodel.parser.load(params_path).parameters
-    simulation_config = reactionmodel.parser.load(config_path, ConfigParser=PreconfiguredSimulatorLoader).simulator_config
-    initial_condition = reactionmodel.parser.load(ic_path).initial_condition
-
-    return reactionmodel.parser.ParseResults(model, parameters, initial_condition, simulation_config)
-
-def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'parameters', config_base = 'simulator', initial_base = 'initial'):
+def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'parameters', config_base = 'simulator', t_base='t', initial_base = 'initial'):
     model_paths  = get_files(dir, f'{model_base}.{format}', 'models', f'*.{format}')
     params_paths = get_files(dir, f'{params_base}.{format}', 'parameters', f'*.{format}')
     config_paths = get_files(dir, f'{config_base}.{format}', 'simulators', f'*.{format}')
+    t_paths      = get_files(dir,  f'{t_base}.{format}', 'ts', f'*.{format}')
     ic_paths     = get_files(dir, f'{initial_base}.{format}', 'initial_conditions', f'*.{format}')
     specifications = {}
-    for model_path, params_path, config_path, ic_path in product(model_paths, params_paths, config_paths, ic_paths):
-        specification = load_specification(model_path, params_path, config_path, ic_path)
+    for model_path, params_path, config_path, t_path, ic_path in product(model_paths, params_paths, config_paths, t_paths, ic_paths):
+        specification = reactionmodel.parser.load(model_path, params_path, config_path, t_path, ic_path, format=format, ConfigParser=PreconfiguredSimulatorLoader)
         # use the parameter and ic file names as a unique identifier for this combination
         # later, we will look up all the combinations that we have test data for, and run simulations to check
         model = os.path.basename(model_path).split('.')[0]
@@ -71,6 +64,9 @@ def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'para
 
         simulator = os.path.basename(config_path).split('.')[0]
         simulator = simulator if simulator != config_base else None
+
+        t = os.path.basename(t_path).split('.')[0]
+        t = t if t != t_base else None
 
         initial = os.path.basename(ic_path).split('.')[0]
         initial = initial if initial != initial_base else None
