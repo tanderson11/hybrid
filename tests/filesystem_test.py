@@ -27,7 +27,7 @@ class FilesystemTestMeta(type):
 class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
-    n = 10
+    n = 10000
 
     # subclasses must define _test_single()
 

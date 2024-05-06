@@ -6,8 +6,8 @@ options:
   round_randomly: true
   halt_on_partition_change: true
   partition_fraction_for_halt: 0.9
-partition_scheme:
+partition_function:
   threshold: 100.0
-  partition_scheme_type: NThresholdPartitioner
+  partition_function_type: NThresholdPartitioner
 description: 'Species partitioning n_T=100.0; halt on partition change.'
 simulator: haseltinerawlings
