@@ -1,0 +1,7 @@
+species:
+- name: X
+
+reactions:
+- description: death
+  reactants: [X]
+  products: []
