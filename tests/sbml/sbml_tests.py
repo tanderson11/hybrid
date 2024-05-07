@@ -10,14 +10,17 @@ from tests.filesystem_test import FilesystemTestMeta, TestSpec
 
 sbml_tests = discover_tests(os.path.dirname(__file__), 'sbml-*', include_check=True)
 
-class TestSBMLMeta(FilesystemTestMeta):
+class SBMLCollection(FilesystemTestMeta):
     test_collection = sbml_tests
 
-class TestSBML(TestSpec, metaclass=TestSBMLMeta):
-    def apply_overrides(self, specification):
-        specification = super().apply_overrides(specification)
-        specification.t.t_eval = np.linspace(0.0, 50.0, 51)
-        return specification
+class TestWithMeanChecks(TestSpec):
+    do_yscores = True
+
+    class ResultsAndCheck(NamedTuple):
+        results_df: pd.DataFrame
+        check_df: pd.DataFrame
+        z_scores_for_mean_by_species: pd.DataFrame
+        y_scores_for_std_by_species: pd.DataFrame = None
 
     def align_results_factory(self, time, targets, desired_species):
         def align_single_result(r):
@@ -34,22 +37,18 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
 
         return align_single_result
 
-    class SBMLTestResult(NamedTuple):
-        results_df: pd.DataFrame
-        check_df: pd.DataFrame
-        z_scores_for_mean_by_species: pd.DataFrame
-        y_scores_for_std_by_species: pd.DataFrame
-
     def tearDown(self):
         # save results
         results_table = self.test_result.results_df
         z_ts = self.test_result.z_scores_for_mean_by_species
-        y_ts = self.test_result.y_scores_for_std_by_species
         out = os.path.join(self.test_out, self.test_name)
         pathlib.Path(out).mkdir(parents=True, exist_ok=True)
         results_table.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
         z_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_zscores.csv'))
-        y_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_yscores.csv'))
+
+        if self.do_yscores:
+            y_ts = self.test_result.y_scores_for_std_by_species
+            y_ts.to_csv(os.path.join(out, f'n={self.n}_simulation_yscores.csv'))
 
     def _test_single(self):
         desired_species = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
@@ -67,9 +66,11 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(all_results.columns)]
 
         z_ts = self.z_score_for_mean(all_results, check_targets, self.check_data, self.n)
-        y_ts = self.y_score_for_std(all_results, check_targets, self.check_data, self.n)
+        y_ts = None
+        if self.do_yscores:
+            y_ts = self.y_score_for_std(all_results, check_targets, self.check_data, self.n)
 
-        self.test_result = self.SBMLTestResult(all_results, self.check_data, z_ts, y_ts)
+        self.test_result = self.ResultsAndCheck(all_results, self.check_data, z_ts, y_ts)
 
     @staticmethod
     def z_score_for_mean(all_results, target_species, check_data, n):
@@ -93,6 +94,12 @@ class TestSBML(TestSpec, metaclass=TestSBMLMeta):
         y_ts = pd.DataFrame(y_ts)
 
         return y_ts
+
+class TestSBML(TestWithMeanChecks, metaclass=SBMLCollection):
+    def apply_overrides(self, specification):
+        specification = super().apply_overrides(specification)
+        specification.t.t_eval = np.linspace(0.0, 50.0, 51)
+        return specification
 
 if __name__ == '__main__':
     unittest.main()

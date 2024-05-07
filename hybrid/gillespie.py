@@ -57,26 +57,38 @@ class GillespieSimulator(Simulator):
     @classmethod
     def find_hitting_time_inhomogenous(cls, t, y, propensity_function, rng):
         hitting_point = rng.exponential(1)
-        f = cls.inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function)
-        hitting_time = fsolve(f, x0=1)
-        return hitting_time
+        #hitting_point = 1
+        #hitting_point = np.log(1/rng.random())
 
-    @staticmethod
-    def find_hitting_time_homogeneous(total_propensity, rng):
-        hitting_point = rng.exponential(1)
-        hitting_time = hitting_point / total_propensity
+        f = cls.inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function)
+        hitting_time = fsolve(f, x0=0.1)[0]
+        #print(y, hitting_time)
+
         return hitting_time
 
     @staticmethod
     def inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function):
         # we need to solve for the hitting time
-        # which is the time when hitting_point / integral of propensities
-        # so we build an objective function that takes a zero when x = hitting_point / integral
-        # using numerical minimization we can minimize the objective function to find the time x
-        def objective_function(x):
-            integral = quad(propensity_function, t, x, args=(y))[0]
-            return np.abs(x - hitting_point / integral)
+        # which is the time when hitting_point = integral of propensities
+        # so we build an objective function of tau that takes a zero when hitting_point = integral
+        # using numerical minimization we can minimize the objective function to find the time tau
+        def objective_function(tau):
+            ## if propensity is constant, then integral is equal to tau * a_tot
+            ## which should give a hitting time of hitting_point / a_tot
+            ## thus we want the objective function to reflect
+            ## 1 - hitting_point * tau / integral
+            integral = quad(propensity_function, t, t+tau, args=(y))[0]
+            if integral == 0.:
+                return np.inf
+            return np.abs(integral - hitting_point)
         return objective_function
+
+    @staticmethod
+    def find_hitting_time_homogeneous(total_propensity, rng):
+        hitting_point = rng.exponential(1)
+        #import pdb; pdb.set_trace()
+        hitting_time = hitting_point / total_propensity
+        return hitting_time
 
     @staticmethod
     def gillespie_update_proposal(N, propensities, rng):
@@ -95,7 +107,6 @@ class GillespieSimulator(Simulator):
 
     @staticmethod
     def expand_step_with_t_eval(t, y0, hitting_time, update, t_eval, t_end):
-        #import pdb; pdb.set_trace()
         # gather any intermediate values requested (y is constant at each intermediate)
         t_history = list(t_eval[(t_eval > t) & (t_eval < t + hitting_time)])
         t_history.append(t+hitting_time)
@@ -108,7 +119,21 @@ class GillespieSimulator(Simulator):
         return t_history, y_history
 
     def gillespie_step(self, t, y, t_end, rng, t_eval):
-        hitting_time = self.find_hitting_time_inhomogenous(t, y, self.propensity_function, rng)
+        zero_pop_reactant = np.broadcast_to(np.expand_dims((y == 0), axis=1), self.kinetic_order_matrix.shape)
+        kinetically_involved = (self.kinetic_order_matrix > 0)
+        noncontributing_reactions = (zero_pop_reactant & kinetically_involved).any(axis=0)
+        if noncontributing_reactions.all():
+            hitting_time = np.inf
+        else:
+            def propensity_function(t, y):
+                propensities = self.propensity_function(t, y)
+                return propensities[~noncontributing_reactions]
+
+            hitting_time = self.find_hitting_time_inhomogenous(t, y, propensity_function, rng)
+    
+        if t + hitting_time > t_end:
+            update = np.zeros_like(y)
+
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
         pathway, update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)

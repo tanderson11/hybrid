@@ -91,10 +91,10 @@ def specs_to_tests(root, specs, check_container='checks', include_check=False):
             check_dir = os.path.join(root, check_container, spec_name)
             if (not os.path.exists(check_dir)) or (not os.path.isdir(check_dir)):
                 continue
-            n_checks = len(glob.glob(os.path.join(check_dir, 'check*.csv')))
+            n_checks = len(glob.glob(os.path.join(check_dir, '*.csv')))
             assert n_checks <= 1, f"Check directory {check_dir} had more than 1 check csv. I don't know what to do"
             if n_checks == 1:
-                check_file = glob.glob(os.path.join(check_dir, 'check*.csv'))[0]
+                check_file = glob.glob(os.path.join(check_dir, '*.csv'))[0]
 
         tests.append((root, spec_name, specification, check_file))
 

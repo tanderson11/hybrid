@@ -27,7 +27,8 @@ class FilesystemTestMeta(type):
 class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
-    n = 10000
+    reaction_to_k = None
+    n = 100
 
     # subclasses must define _test_single()
 
@@ -40,8 +41,7 @@ class TestSpec(unittest.TestCase):
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
         factory = self.specification.simulator_config
 
-        k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
-
+        k = self.specification.model.get_k(reaction_to_k=self.reaction_to_k, parameters=self.specification.parameters, jit=True)
         simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), species_labels=self.specification.model.legend())
 
         processed_results = simulator.run_simulations(self.n, self.specification.t.t_span, initial_condition, rng=rng, t_eval=self.specification.t.t_eval, end_routine=end_routine)
