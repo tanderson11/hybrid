@@ -45,7 +45,7 @@ def get_files(root, individual, collection, pattern):
         return [os.path.join(root, individual)]
     return glob.glob(os.path.join(root, collection, pattern))
 
-def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'parameters', config_base = 'simulator', t_base='t', initial_base = 'initial'):
+def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'parameters', config_base = 'simulator', t_base='t', initial_base = 'initial', simulators_share_checks=False):
     model_paths  = get_files(dir, f'{model_base}.{format}', 'models', f'*.{format}')
     params_paths = get_files(dir, f'{params_base}.{format}', 'parameters', f'*.{format}')
     config_paths = get_files(dir, f'{config_base}.{format}', 'simulators', f'*.{format}')
@@ -71,7 +71,10 @@ def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'para
         initial = os.path.basename(ic_path).split('.')[0]
         initial = initial if initial != initial_base else None
 
-        names = [model, params, t, initial, simulator]
+        if simulators_share_checks:
+            names = [model, params, t, initial]
+        else:
+            [model, params, t, initial, simulator]
         names = [n for n in names if n is not None]
         identifier = ''
         for i, name in enumerate(names):
