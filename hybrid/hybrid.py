@@ -430,7 +430,7 @@ class HybridSimulator(Simulator):
 
         # if the event was a stochastic event, cause it to happen
         # first by determining which event happened
-        endpoint_propensities = self.propensity_function(t, y)
+        endpoint_propensities = self.propensity_function(t_event, y_event)
 
         # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
         # I think we want to use starting partition but endpoint propensities!
@@ -440,7 +440,6 @@ class HybridSimulator(Simulator):
         if self.simulation_options.contrived_no_reaction_rate is not None:
             valid_selections = np.hstack([valid_selections, np.array([self.simulation_options.contrived_no_reaction_rate])])
 
-        # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
         selection_sum = valid_selections.sum()
         assert selection_sum != 0.
         valid_selections /= selection_sum
