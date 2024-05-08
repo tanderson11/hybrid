@@ -48,6 +48,42 @@ class TestSpec(unittest.TestCase):
 
         return processed_results
 
+class TEvalTest(TestSpec):
+    t_eval = None
+    
+    def apply_overrides(self, specification):
+        specification = super().apply_overrides(specification)
+        specification.t.t_eval = self.t_eval
+        return specification
+
+class MeanTest(TEvalTest):
+    def end_routine(self, result):
+        t_history, y_history = result.restricted_values(self.t_eval)
+        legend = self.specification.model.legend()
+        df = pd.DataFrame({'time': t_history})
+        for i,s in enumerate(legend):
+            df[s] = y_history[i, :]
+        df = df.set_index('time')
+        return df
+
+    def _test_single(self):
+        dfs = self.run_simulations(self.end_routine)
+        df = pd.concat(dfs, axis=1)
+        means = df.T.groupby(by=df.columns).mean().T
+        means.columns = [c + '-mean' for c in means.columns]
+        stds = df.T.groupby(by=df.columns).std().T
+        stds.columns = [c + '-sd' for c in stds.columns]
+        df = pd.concat([means, stds], axis=1)
+        df = df.round(4)
+        df.index = df.index.round(4)
+        self.df = df
+
+    def tearDown(self):
+        # save results
+        out = os.path.join(self.test_out, self.test_name)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+        self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
+
 class EndpointTest(TestSpec):
     """A test of a configuration that relies only on the final y value."""
     def end_routine(self, result):

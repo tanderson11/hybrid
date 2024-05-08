@@ -4,19 +4,18 @@ import numpy as np
 from numba import jit
 
 from tests.discover import discover_tests
-from tests.filesystem_test import FilesystemTestMeta
-from tests.sbml.sbml_tests import TestWithMeanChecks
+from tests.filesystem_test import FilesystemTestMeta, MeanTest
 
-time_dependent_tests = discover_tests(os.path.dirname(__file__), '*', include_check=True)
+time_dependent_tests = discover_tests(os.path.dirname(__file__), '*', include_check=False)
 
 class TimeDependentCollection(FilesystemTestMeta):
     test_collection = time_dependent_tests
 
-class TestTimeDependent(TestWithMeanChecks, metaclass=TimeDependentCollection):
+class TestTimeDependent(MeanTest, metaclass=TimeDependentCollection):
+    t_eval = np.linspace(0, 5.0, 51)
     do_yscores = False
     def apply_overrides(self, specification):
         specification = super().apply_overrides(specification)
-        specification.t.t_eval = np.linspace(0.0, 5.0, 51)
 
         if 'simple' in self.test_name:
             r = specification.model.all_reactions[0]

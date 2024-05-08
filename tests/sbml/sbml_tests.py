@@ -6,14 +6,15 @@ import pathlib
 from typing import NamedTuple
 
 from tests.discover import discover_tests
-from tests.filesystem_test import FilesystemTestMeta, TestSpec
+from tests.filesystem_test import FilesystemTestMeta, TEvalTest
 
 sbml_tests = discover_tests(os.path.dirname(__file__), 'sbml-*', include_check=True)
 
 class SBMLCollection(FilesystemTestMeta):
     test_collection = sbml_tests
 
-class TestWithMeanChecks(TestSpec):
+class ZScoreTest(TEvalTest):
+    t_eval = None
     do_yscores = True
 
     class ResultsAndCheck(NamedTuple):
@@ -93,11 +94,8 @@ class TestWithMeanChecks(TestSpec):
 
         return y_ts
 
-class TestSBML(TestWithMeanChecks, metaclass=SBMLCollection):
-    def apply_overrides(self, specification):
-        specification = super().apply_overrides(specification)
-        specification.t.t_eval = np.linspace(0.0, 50.0, 51)
-        return specification
+class TestSBML(ZScoreTest, metaclass=SBMLCollection):
+    t_eval = np.linspace(0.0, 50.0, 51)
 
 if __name__ == '__main__':
     unittest.main()

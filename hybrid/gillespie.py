@@ -133,6 +133,7 @@ class GillespieSimulator(Simulator):
     
         if t + hitting_time > t_end:
             update = np.zeros_like(y)
+            return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), GillespieStepStatus.t_end)
 
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
