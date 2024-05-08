@@ -86,8 +86,8 @@ class GillespieSimulator(Simulator):
     @staticmethod
     def find_hitting_time_homogeneous(total_propensity, rng):
         hitting_point = rng.exponential(1)
-        #import pdb; pdb.set_trace()
-        hitting_time = hitting_point / total_propensity
+        with np.errstate(divide='ignore'):
+            hitting_time = hitting_point / total_propensity
         return hitting_time
 
     @staticmethod

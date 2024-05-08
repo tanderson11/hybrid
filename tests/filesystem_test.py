@@ -28,7 +28,7 @@ class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
     reaction_to_k = None
-    n = 50
+    n = 10000
 
     # subclasses must define _test_single()
 

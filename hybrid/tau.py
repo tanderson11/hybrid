@@ -200,7 +200,8 @@ class TauLeapSimulator(GillespieSimulator):
         # although I guess with this species partitioning, ... that's essentially defying what Cao proposed entirely, because y >= 1
 
         # CAO AND GILLESPIE
-        tau1 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1) / np.abs(mu_hat_i))
+        with np.errstate(divide='ignore'):
+            tau1 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1) / np.abs(mu_hat_i))
         tau2 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1)**2 / np.abs(sigma_2_hat_i))
         # THAYER
         # should modify this so we don't get epsilon**2?

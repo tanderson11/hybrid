@@ -71,27 +71,34 @@ def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'para
         initial = os.path.basename(ic_path).split('.')[0]
         initial = initial if initial != initial_base else None
 
+        names = [model, params, t, initial, simulator]
+        identifier = build_identifier(names)
+
         if simulators_share_checks:
-            names = [model, params, t, initial]
+            check_dirname = build_identifier([model, params, t, initial])
         else:
-            [model, params, t, initial, simulator]
-        names = [n for n in names if n is not None]
-        identifier = ''
-        for i, name in enumerate(names):
-            if i != 0:
-                identifier += '_'
-            identifier += name
+            check_dirname = identifier
         # if identifier == '': all of the configuration files lived in root directory, so the check should just live in the root of the check directory
-        specifications[identifier] = specification
+        specifications[identifier] = (specification, check_dirname)
     return specifications
+
+def build_identifier(names):
+    names = [n for n in names if n is not None]
+    identifier = ''
+    for i, name in enumerate(names):
+        if i != 0:
+            identifier += '_'
+        identifier += name
+    return identifier
 
 def specs_to_tests(root, specs, check_container='checks', include_check=False):
     tests = []
-    for spec_name, specification in specs.items():
+    for spec_name, t in specs.items():
+        specification, check_dirname = t
         check_file = None
         # if we're including checks, skip if the specification permutation does not have a check folder
         if include_check:
-            check_dir = os.path.join(root, check_container, spec_name)
+            check_dir = os.path.join(root, check_container, check_dirname)
             if (not os.path.exists(check_dir)) or (not os.path.isdir(check_dir)):
                 continue
             n_checks = len(glob.glob(os.path.join(check_dir, '*.csv')))

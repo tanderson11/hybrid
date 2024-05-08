@@ -1,6 +1,5 @@
 import sys
 import unittest
-import os
 
 import sbml_tests
 
