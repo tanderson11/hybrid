@@ -1,0 +1,20 @@
+species:
+- name: X
+
+reactions:
+- description: B_1 + 2X -> 3X
+  reactants: [[X, 2]]
+  products: [[X, 3]]
+  k: 'c1 * N1'
+- description: 3X -> B_1 + 2X
+  reactants: [[X, 3]]
+  products: [[X, 2]]
+  k: 'c2'
+- description: B2 -> X
+  reactants: []
+  products: [X]
+  k: 'c3 * N2'
+- description: X -> B2
+  reactants: [X]
+  products: []
+  k: 'c4'

@@ -1,0 +1,9 @@
+# citation: Cao et al 2006
+
+parameters:
+  c1: '3e-7'
+  c2: '1e-4'
+  c3: '1e-3'
+  c4: 3.5
+  N1: '1e5'
+  N2: '2e5'

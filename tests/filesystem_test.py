@@ -28,7 +28,7 @@ class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
     reaction_to_k = None
-    n = 100
+    n = 50
 
     # subclasses must define _test_single()
 
@@ -56,7 +56,7 @@ class TEvalTest(TestSpec):
         specification.t.t_eval = self.t_eval
         return specification
 
-class MeanTest(TEvalTest):
+class TrajectoryTest(TEvalTest):
     def end_routine(self, result):
         t_history, y_history = result.restricted_values(self.t_eval)
         legend = self.specification.model.legend()
@@ -68,6 +68,20 @@ class MeanTest(TEvalTest):
 
     def _test_single(self):
         dfs = self.run_simulations(self.end_routine)
+        for i,df in enumerate(dfs):
+            df['trial'] = i
+        df = pd.concat(dfs)
+        self.df = df
+
+    def tearDown(self):
+        # save results
+        out = os.path.join(self.test_out, self.test_name)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+        self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
+
+class MeanTest(TrajectoryTest):
+    def _test_single(self):
+        dfs = self.run_simulations(self.end_routine)
         df = pd.concat(dfs, axis=1)
         means = df.T.groupby(by=df.columns).mean().T
         means.columns = [c + '-mean' for c in means.columns]
@@ -77,12 +91,6 @@ class MeanTest(TEvalTest):
         df = df.round(4)
         df.index = df.index.round(4)
         self.df = df
-
-    def tearDown(self):
-        # save results
-        out = os.path.join(self.test_out, self.test_name)
-        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
-        self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
 
 class EndpointTest(TestSpec):
     """A test of a configuration that relies only on the final y value."""

@@ -1,7 +1,7 @@
 version: '1.0'
 options:
   approximate_rtot: true
-  contrived_no_reaction_rate: 100.0
+  contrived_no_reaction_rate: 10.0
   fast_scale: deterministic
   round_randomly: true
   halt_on_partition_change: false
