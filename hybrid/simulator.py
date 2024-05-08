@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import Union
+import pandas as pd
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -47,6 +48,13 @@ class History():
         ax.plot(self.t_history, self.y_history.T, **plot_kwargs)
         ax.legend(legend)
         return ax
+
+    def restricted_values(self, t, decimal_places=8):
+        t_restrict = pd.Series(t).round(decimals=decimal_places)
+        t_series = pd.Series(self.t_history).round(decimals=decimal_places)
+        mask = t_series.isin(t_restrict) | (self.t_history == self.t)
+
+        return self.t_history[mask], self.y_history[:, mask]
 
 class Run():
     def __init__(self, t0, y0, history_length=1e6) -> None:

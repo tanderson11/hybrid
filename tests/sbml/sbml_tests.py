@@ -24,13 +24,11 @@ class TestWithMeanChecks(TestSpec):
 
     def align_results_factory(self, time, targets, desired_species):
         def align_single_result(r):
-            aligned = []
-            t_history = r.t_history
-            for t in time:
-                idx = np.argmin(np.abs(t-t_history))
-                aligned.append((r.t_history[idx], *[r.y_history[target_index,idx] for target_index in targets]))
-            indexed_results = pd.DataFrame.from_records(aligned, columns=['time', *desired_species])
-            indexed_results['time'] = np.round(indexed_results['time'], 5)
+            t_history, y_history = r.restricted_values(time)
+
+            indexed_results = pd.DataFrame({'time':t_history})
+            for species, target_index in zip(desired_species, targets):
+                indexed_results[species] = y_history[target_index, :]
             indexed_results.set_index('time')
 
             return indexed_results
@@ -56,7 +54,7 @@ class TestWithMeanChecks(TestSpec):
         targets = [all_species.index(s) for s in desired_species]
         align_results = self.align_results_factory(self.check_data['time'], targets, desired_species)
 
-        results = self.run_simulations(align_results)
+        results = self.run_simulations(end_routine=align_results)
         for df in results:
             df.set_index('time', inplace=True)
         df = pd.concat(results, axis=1)

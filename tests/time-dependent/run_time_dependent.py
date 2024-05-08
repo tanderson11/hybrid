@@ -18,11 +18,10 @@ class TestTimeDependent(TestWithMeanChecks, metaclass=TimeDependentCollection):
         specification = super().apply_overrides(specification)
         specification.t.t_eval = np.linspace(0.0, 5.0, 51)
 
-        if self.test_name == 'simple_gillespie':
+        if 'simple' in self.test_name:
             r = specification.model.all_reactions[0]
             @jit(nopython=True)
             def k_of_t(t):
-                #return 1.0
                 return np.array(t)
             self.reaction_to_k = {r: k_of_t}
         return specification
