@@ -1,7 +1,7 @@
 import os
 import yaml
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 
 from reactionmodel.parser import ConfigParser
 
@@ -16,9 +16,12 @@ class SimulatorFactory(ConfigParser):
 
     version: str
 
-    def to_dict(self):
-        d = asdict(self)
-        return self.tune_dictionary(d)
+    def to_dict(self, for_saving=False):
+        if for_saving:
+            d = asdict(self)
+            return self.tune_dictionary(d)
+        d = {field.name:getattr(self, field.name) for field in fields(self)}
+        return d
 
     def tune_dictionary(self, selfdictionary):
         selfdictionary['simulator'] = self.simulator
@@ -26,8 +29,12 @@ class SimulatorFactory(ConfigParser):
 
     @classmethod
     def from_dict(cls, dict):
-        assert dict.pop('simulator') == cls.simulator
-        return cls(**dict)
+        handled_d = {}
+        for k,v in dict.items():
+            _k, _v = cls.handle_field(k, v)
+            handled_d[_k] = _v
+        assert handled_d.pop('simulator') == cls.simulator
+        return cls(**handled_d)
 
     @classmethod
     def load_dictionary(cls, file, format='yaml'):
@@ -47,29 +54,25 @@ class SimulatorFactory(ConfigParser):
     @classmethod
     def load(cls, file, format='yaml'):
         d = cls.load_dictionary(file, format=format)
-
-        handled_d = {}
-        for k,v in d.items():
-            handled_d[k] = cls.handle_field(k, v)
-        return cls.from_dict(handled_d)
+        return cls.from_dict(d)
         
     def save(self, file, format='yaml'):
         if format=='yaml':
             with open(file, 'w') as f:
-                yaml.dump(self.to_dict(), f, Dumper=yaml.SafeDumper, sort_keys=False)
+                yaml.dump(self.to_dict(for_saving=True), f, Dumper=yaml.SafeDumper, sort_keys=False)
         elif format=='json':
             with open(file, 'w') as f:
-                json.dump(self.to_dict(), f)
+                json.dump(self.to_dict(for_saving=True), f)
         else:
             raise ValueError(f"format should be one of yaml or json was {format}")
 
     @classmethod
     def handle_field(cls, key, value):
-        return value
+        return key, value
 
     def make_simulator(self, *args, **kwargs):
         self_dict = self.to_dict()
-        self_dict.pop('simulator')
+        #self_dict.pop('simulator')
         self_dict.pop('version')
         self_dict.pop('description')
         options = self_dict.pop('options')
@@ -104,19 +107,19 @@ class HybridSimulatorFactory(SimulatorFactory):
     simulator_klass = HybridSimulator
 
     options: HybridSimulationOptions
-    partition_scheme: PartitionScheme
+    partition_function: PartitionScheme
     description: str = ""
 
     @classmethod
     def handle_field(cls, key, value):
-        if key != 'partition_scheme':
+        if key != 'partition_function':
             return super().handle_field(key, value)
         
-        scheme_type = value.pop('partition_scheme_type')
-        return SCHEMES_BY_NAME[scheme_type](**value)
+        scheme_type = value.pop('partition_function_type')
+        return key, SCHEMES_BY_NAME[scheme_type](**value)
     
     def tune_dictionary(self, selfdictionary):
-        selfdictionary['partition_scheme']['partition_scheme_type'] = type(self.partition_scheme).__name__
+        selfdictionary['partition_function']['partition_function_type'] = type(self.partition_function).__name__
         return super().tune_dictionary(selfdictionary)
 
 FACTORIES = {
@@ -152,3 +155,7 @@ class PreconfiguredSimulatorLoader(ConfigParser):
     def from_dict(cls, config_dictionary):
         parser = cls(**config_dictionary)
         return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{parser.name}.{cls.format}'), format=cls.format)
+
+    @classmethod
+    def load_preconfigured(cls, name):
+        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{name}.{cls.format}'), format=cls.format)

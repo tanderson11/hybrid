@@ -1,16 +1,8 @@
 import unittest
 import os
-from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import pathlib
-
-from hybrid.simulate import SIMULATORS
-
-@dataclass
-class SimulatorArguments():
-    t_span: tuple
-    t_eval: tuple
 
 class FilesystemTestMeta(type):
     test_collection = None
@@ -18,10 +10,11 @@ class FilesystemTestMeta(type):
         def gen_test(test_name, specification, check_file):
             def test(self):
                 self.test_name = test_name
-                self.specification = specification
+                self.specification = self.apply_overrides(specification)
                 self.check_file = check_file
                 # load the csv of analytic/high quality simulation results
-                self.check_data = pd.read_csv(self.check_file)
+                if check_file is not None:
+                    self.check_data = pd.read_csv(self.check_file)
                 print("About to run test.")
                 self._test_single()
             return test
@@ -34,10 +27,13 @@ class FilesystemTestMeta(type):
 class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
-    TEST_ARGUMENTS = SimulatorArguments((0.0, 50.0), np.linspace(0, 50, 51))
+    reaction_to_k = None
     n = 10000
 
     # subclasses must define _test_single()
+
+    def apply_overrides(self, specification):
+        return specification
 
     def run_simulations(self, end_routine):
         processed_results = []
@@ -45,23 +41,64 @@ class TestSpec(unittest.TestCase):
         initial_condition = self.specification.model.make_initial_condition(self.specification.initial_condition)
         factory = self.specification.simulator_config
 
-        k = self.specification.model.get_k(parameters=self.specification.parameters, jit=True)
+        k = self.specification.model.get_k(reaction_to_k=self.reaction_to_k, parameters=self.specification.parameters, jit=True)
+        simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), species_labels=self.specification.model.legend())
 
-        simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order())
-
-        processed_results = simulator.run_simulations(self.n, self.TEST_ARGUMENTS.t_span, initial_condition, rng=rng, t_eval=self.TEST_ARGUMENTS.t_eval, end_routine=end_routine)
+        processed_results = simulator.run_simulations(self.n, self.specification.t.t_span, initial_condition, rng=rng, t_eval=self.specification.t.t_eval, end_routine=end_routine)
 
         return processed_results
 
-class EndpointTest(TestSpec):
-    """A test of a configuration that relies only on the final y value."""
-    def end_routine_factory(self):
-        def end_routine(result):
-            return self.specification.model.y_to_dict(result.y)
-        return end_routine
+class TEvalTest(TestSpec):
+    t_eval = None
+    
+    def apply_overrides(self, specification):
+        specification = super().apply_overrides(specification)
+        specification.t.t_eval = self.t_eval
+        return specification
+
+class TrajectoryTest(TEvalTest):
+    def end_routine(self, result):
+        t_history, y_history = result.restricted_values(self.t_eval)
+        legend = self.specification.model.legend()
+        df = pd.DataFrame({'time': t_history})
+        for i,s in enumerate(legend):
+            df[s] = y_history[i, :]
+        df = df.set_index('time')
+        return df
 
     def _test_single(self):
-        results = self.do_simulations(self.end_routine_factory())
+        dfs = self.run_simulations(self.end_routine)
+        for i,df in enumerate(dfs):
+            df['trial'] = i
+        df = pd.concat(dfs)
+        self.df = df
+
+    def tearDown(self):
+        # save results
+        out = os.path.join(self.test_out, self.test_name)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+        self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
+
+class MeanTest(TrajectoryTest):
+    def _test_single(self):
+        dfs = self.run_simulations(self.end_routine)
+        df = pd.concat(dfs, axis=1)
+        means = df.T.groupby(by=df.columns).mean().T
+        means.columns = [c + '-mean' for c in means.columns]
+        stds = df.T.groupby(by=df.columns).std().T
+        stds.columns = [c + '-sd' for c in stds.columns]
+        df = pd.concat([means, stds], axis=1)
+        df = df.round(4)
+        df.index = df.index.round(4)
+        self.df = df
+
+class EndpointTest(TestSpec):
+    """A test of a configuration that relies only on the final y value."""
+    def end_routine(self, result):
+        return self.specification.model.y_to_dict(result.y)
+
+    def _test_single(self):
+        results = self.run_simulations(self.end_routine)
         df = pd.DataFrame(results)
         self.df = df
 

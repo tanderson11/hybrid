@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from typing import Union
+import pandas as pd
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -12,6 +13,48 @@ class StepStatus(IntEnum):
     # simulators will subclass this to introduce other statuses.
     def was_rejected(self):
         return self < 0
+
+@dataclass(frozen=True)
+class History():
+    """The result of one simulation.
+
+    Attributes
+    ----------
+    t: float
+        The time at the end of simulation.
+    y: ArrayLike
+        The state vector at t. `y_i` is the quantity of the `i`th species at time `t`.
+    t_history: ArrayLike
+        The vector of all times where the state was recorded.
+    y_history: ArrayLike
+        An array of state vectors where the `i`th state vector corresponds to the `i`th entry in `t_history`.
+    status_counter: Counter
+        A counter object that records all the status of the simulator at the end of each simulation step.
+    """
+    t: float
+    y: ArrayLike
+    t_history: ArrayLike
+    y_history: ArrayLike
+    step_indices: ArrayLike
+    status_history: ArrayLike
+    pathway_history: ArrayLike
+    status_counter: Counter
+    pathway_counter: Counter
+
+    def plot(self, legend, ax=None, **plot_kwargs):
+        import matplotlib.pyplot as plt
+        if ax is None:
+            ax = plt.subplot()
+        ax.plot(self.t_history, self.y_history.T, **plot_kwargs)
+        ax.legend(legend)
+        return ax
+
+    def restricted_values(self, t, decimal_places=6):
+        t_restrict = pd.Series(t).round(decimals=decimal_places)
+        t_series = pd.Series(self.t_history).round(decimals=decimal_places)
+        mask = t_series.isin(t_restrict) | (self.t_history == self.t)
+
+        return self.t_history[mask], self.y_history[:, mask]
 
 class Run():
     def __init__(self, t0, y0, history_length=1e6) -> None:
@@ -73,41 +116,6 @@ class Run():
 
     def get_step_kwargs(self):
         return {}
-
-@dataclass(frozen=True)
-class History():
-    """The result of one simulation.
-
-    Attributes
-    ----------
-    t: float
-        The time at the end of simulation.
-    y: ArrayLike
-        The state vector at t. `y_i` is the quantity of the `i`th species at time `t`.
-    t_history: ArrayLike
-        The vector of all times where the state was recorded.
-    y_history: ArrayLike
-        An array of state vectors where the `i`th state vector corresponds to the `i`th entry in `t_history`.
-    status_counter: Counter
-        A counter object that records all the status of the simulator at the end of each simulation step.
-    """
-    t: float
-    y: ArrayLike
-    t_history: ArrayLike
-    y_history: ArrayLike
-    step_indices: ArrayLike
-    status_history: ArrayLike
-    pathway_history: ArrayLike
-    status_counter: Counter
-    pathway_counter: Counter
-
-    def plot(self, legend, ax=None, **plot_kwargs):
-        import matplotlib.pyplot as plt
-        if ax is None:
-            ax = plt.subplot()
-        ax.plot(self.t_history, self.y_history.T, **plot_kwargs)
-        ax.legend(legend)
-        return ax
 
 class Step(NamedTuple):
     t_history: ArrayLike

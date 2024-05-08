@@ -77,10 +77,13 @@ class Partition():
     # array of values for what threshold was used to partition each propensity
     propensity_thresholds: np.ndarray = None
 
-def stochastic_event_finder(t, y_expanded, partition, propensity_function, hitting_point):
-    stochastic_progress = y_expanded[-1]
-    return stochastic_progress-hitting_point
-stochastic_event_finder.terminal = True
+def stochastic_event_finder_factory(t_start, contrived_no_reaction_rate):
+    if contrived_no_reaction_rate is None: contrived_no_reaction_rate = 0
+    def stochastic_event_finder(t, y_expanded, partition, propensity_function, hitting_point):
+        stochastic_progress = y_expanded[-1]
+        return stochastic_progress+(contrived_no_reaction_rate)*(t-t_start)-hitting_point
+    stochastic_event_finder.terminal = True
+    return stochastic_event_finder
 
 def partition_change_finder_factory(partition_fraction_for_halt):
     def partition_change_finder(t, y_expanded, partition, propensity_function, hitting_point):
@@ -316,7 +319,8 @@ class HybridSimulator(Simulator):
                 discontinuity_flag = False
         else:
             # a continuous event function that will record 0 when the hitting point is reached
-            events = [stochastic_event_finder]
+            # this event function takes into account the contrived rate of no reaction
+            events = [stochastic_event_finder_factory(t, self.simulation_options.contrived_no_reaction_rate)]
             event_type_cutoffs = [0]
             event_types = [HybridStepStatus.stochastic_event]
 
@@ -426,17 +430,16 @@ class HybridSimulator(Simulator):
 
         # if the event was a stochastic event, cause it to happen
         # first by determining which event happened
-        endpoint_propensities = self.propensity_function(t, y)
+        endpoint_propensities = self.propensity_function(t_event, y_event)
 
         # OPEN QUESTION: should we recalculate endpoint partition or should we use current partition?
         # I think we want to use starting partition but endpoint propensities!
 
         valid_selections = endpoint_propensities * partition.stochastic
         # if we have a contrived rate of no reaction, insert it into our array of transition probabilities as the last element
-        if self.simulation_options.approximate_rtot:
+        if self.simulation_options.contrived_no_reaction_rate is not None:
             valid_selections = np.hstack([valid_selections, np.array([self.simulation_options.contrived_no_reaction_rate])])
 
-        # TODO: fix if sum == 0 to have no division by 0. WHY DOES THIS HAPPEN?
         selection_sum = valid_selections.sum()
         assert selection_sum != 0.
         valid_selections /= selection_sum
@@ -448,7 +451,7 @@ class HybridSimulator(Simulator):
         path_index = np.unravel_index(entry, valid_selections.shape)
 
         # don't apply any update if our selection was the contrived rate of no reaction
-        if self.simulation_options.approximate_rtot and np.squeeze(path_index) == len(valid_selections)-1:
+        if self.simulation_options.contrived_no_reaction_rate is not None and np.squeeze(path_index) == len(valid_selections)-1:
             return StepUpdate(t_history, y_history, HybridStepStatus.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
 
         # N_ij = net change in i after unit progress in reaction j
@@ -479,9 +482,8 @@ class HybridSimulationOptions():
             Rawlings paper). If True, contrived_no_reaction_rate must be specified.
             Defaults to False.
         contrived_no_reaction_rate (float, optional):
-            specified if and only if approximate_rtot=True: a contrived rate
-            of no reaction to ensure that no timestep between stochastic events
-            becomes too large. Defaults to None.
+            a contrived rate of no reaction to ensure that no timestep between stochastic
+            events becomes too large. Must be specified if approximate_rtot is True. Defaults to None.
         fast_scale (str, optional):
             if 'deterministic', approximate the fast reactions as differential equations.
             If 'langevin', treat the fast reactions as Langevin equations. Defaults to 'deterministic'.
@@ -508,9 +510,6 @@ class HybridSimulationOptions():
         if not self.fast_scale == 'deterministic': raise HybridNotImplementedError("simulation was configured with fast_scale!='deterministic', but Langevin equations are not implemented.")
         if self.approximate_rtot:
             assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
-        else:
-            if self.contrived_no_reaction_rate is not None:
-                print("Warning: contrived rate of no reaction defined but approximate_rtot is False")
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)

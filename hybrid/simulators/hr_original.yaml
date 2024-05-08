@@ -1,0 +1,13 @@
+version: '1.0'
+options:
+  approximate_rtot: true
+  contrived_no_reaction_rate: 10.0
+  fast_scale: deterministic
+  round_randomly: true
+  halt_on_partition_change: false
+  partition_fraction_for_halt: null
+partition_function:
+  threshold: 100.0
+  partition_function_type: NThresholdPartitioner
+description: ''
+simulator: haseltinerawlings

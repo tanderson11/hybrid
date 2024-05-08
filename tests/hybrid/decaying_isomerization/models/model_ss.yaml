@@ -1,0 +1,9 @@
+species:
+- name: S12
+- name: S3
+
+reactions:
+- description: S12 -> S3
+  reactants: [S12]
+  products: [S3]
+  k: 'c1*c3/(c1+c2)'

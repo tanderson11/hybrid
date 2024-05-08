@@ -1,0 +1,1 @@
+These directories exist to signal to the testing framework which combinations of models and simulators should be used (because the reaction network ie model is different for slow scale stochastic simulation). They are intended to be empty.
