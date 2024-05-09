@@ -369,12 +369,16 @@ class HybridSimulator(Simulator):
             #print(step_solved)
             assert False, "integration step failed"
         elif ivp_step_status == 0:
-            # if we are approximating the stochastic rates as constant between events, then hitting the upper limit
-            # corresponds to a stochastic event, unless the upper limit is also the true end of the integration
+            # it looks like we reached an upper limit
+            # but if we are approximating the stochastic rates as constant between events,
+            # then hitting the upper limit actually corresponds to a stochastic event,
+            # unless the upper limit is also the true end of the integration
             if not discontinuity_flag and self.simulation_options.approximate_rtot and t_end > t_span[-1]:
                 status = HybridStepStatus.stochastic_event
                 for t_event in step_solved.t_events:
                     assert(len(t_event) == 0)
+
+                t_event, y_event = t_history[-1], y_history[:, -1]
             else:
                 status = HybridStepStatus.t_end
         else:
