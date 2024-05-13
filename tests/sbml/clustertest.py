@@ -1,13 +1,16 @@
-import sys
 import unittest
+import argparse
 
-import sbml_tests
+from tests.suites import suites
 
 if __name__ == '__main__':
-    assert len(sys.argv) == 2, "Usage: 'python clustertest i' where i == ith test to run from SBML suite, arbitrarily sorted."
-    i = int(sys.argv[1])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('suite', choices=suites.keys(), help="name of test suite to run")
+    parser.add_argument('test', type=int, help="index of test to run from suite, arbitrarily sorted")
+    args = parser.parse_args()
+    i = args.test
     print("I", i)
-    suite = unittest.TestLoader().loadTestsFromTestCase(sbml_tests.TestSBML)
+    suite = unittest.TestLoader().loadTestsFromTestCase(suites[args.suite])
     suite_list = list(suite)
     runner = unittest.TextTestRunner()
     print(suite_list[i])
