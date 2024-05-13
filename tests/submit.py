@@ -14,8 +14,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ntests = len(list(unittest.TestLoader().loadTestsFromTestCase(suites[args.suite])))
-    print(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --jobname={args.suite} --time={args.time}:0:0 --mem={args.memory}G submit_sbml.sh')
     subprocess.run(
-        shlex.split(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --jobname={args.suite} --time={args.time}:0:0 --mem={args.memory}G submit_sbml.sh'),
+        shlex.split(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --jobname={args.suite} --time={args.time}:0:0 --mem={args.memory}G submit.sh'),
         env={'TEST_SUITE': args.suite}
     )
