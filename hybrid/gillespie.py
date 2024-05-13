@@ -61,7 +61,13 @@ class GillespieSimulator(Simulator):
         #hitting_point = np.log(1/rng.random())
 
         f = cls.inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function)
-        hitting_time = fsolve(f, x0=0.1)[0]
+        hitting_time, fevs, term, message = fsolve(f, x0=0.1, full_output=True)
+        hitting_time = hitting_time[0]
+        if term != 1:
+            residual = f(hitting_time)
+            if residual > 1e-8:
+                #import pdb; pdb.set_trace()
+                raise ValueError('fsolve failed')
         #print(y, hitting_time)
 
         return hitting_time
@@ -72,12 +78,12 @@ class GillespieSimulator(Simulator):
         # which is the time when hitting_point = integral of propensities
         # so we build an objective function of tau that takes a zero when hitting_point = integral
         # using numerical minimization we can minimize the objective function to find the time tau
+        def propensity_wrapped(t):
+            propensities = propensity_function(t, y)
+            return np.sum(propensities)
+
         def objective_function(tau):
-            ## if propensity is constant, then integral is equal to tau * a_tot
-            ## which should give a hitting time of hitting_point / a_tot
-            ## thus we want the objective function to reflect
-            ## 1 - hitting_point * tau / integral
-            integral = quad(propensity_function, t, t+tau, args=(y))[0]
+            integral = quad(propensity_wrapped, t, t+tau)[0]
             if integral == 0.:
                 return np.inf
             return np.abs(integral - hitting_point)
