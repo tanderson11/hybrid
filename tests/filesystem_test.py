@@ -80,8 +80,7 @@ class TrajectoryTest(TEvalTest):
         self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
 
 class MeanTest(TrajectoryTest):
-    def _test_single(self):
-        dfs = self.run_simulations(self.end_routine)
+    def consolidate_data(self, dfs):
         df = pd.concat(dfs, axis=1)
         means = df.T.groupby(by=df.columns).mean().T
         means.columns = [c + '-mean' for c in means.columns]
@@ -90,7 +89,11 @@ class MeanTest(TrajectoryTest):
         df = pd.concat([means, stds], axis=1)
         df = df.round(4)
         df.index = df.index.round(4)
-        self.df = df
+        return df
+
+    def _test_single(self):
+        dfs = self.run_simulations(self.end_routine)
+        self.df = self.consolidate_data(dfs)
 
 class EndpointTest(TestSpec):
     """A test of a configuration that relies only on the final y value."""
