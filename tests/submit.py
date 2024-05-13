@@ -18,6 +18,6 @@ if __name__ == '__main__':
     env = os.environ.copy()
     env['TEST_SUITE'] = args.suite
     subprocess.run(
-        shlex.split(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --jobname={args.suite} --time={args.time}:0:0 --mem={args.memory}G submit.sh'),
+        shlex.split(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --job-name={args.suite} --time={args.time}:0:0 --mem={args.memory}G submit.sh'),
         env=env
     )
