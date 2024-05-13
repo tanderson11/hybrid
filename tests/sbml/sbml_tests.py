@@ -6,14 +6,14 @@ import pathlib
 from typing import NamedTuple
 
 from tests.discover import discover_tests
-from tests.filesystem_test import FilesystemTestMeta, TEvalTest
+from tests.filesystem_test import FilesystemTestMeta, MeanTest
 
 sbml_tests = discover_tests(os.path.dirname(__file__), 'sbml-*', include_check=True, simulators_share_checks=True)
 
 class SBMLCollection(FilesystemTestMeta):
     test_collection = sbml_tests
 
-class ZScoreTest(TEvalTest):
+class ZScoreTest(MeanTest):
     t_eval = None
     do_yscores = True
 
@@ -23,18 +23,13 @@ class ZScoreTest(TEvalTest):
         z_scores_for_mean_by_species: pd.DataFrame
         y_scores_for_std_by_species: pd.DataFrame = None
 
-    def align_results_factory(self, time, targets, desired_species):
-        def align_single_result(r):
-            t_history, y_history = r.restricted_values(time)
-
-            indexed_results = pd.DataFrame({'time':t_history})
-            for species, target_index in zip(desired_species, targets):
-                indexed_results[species] = y_history[target_index, :]
-            indexed_results.set_index('time')
-
-            return indexed_results
-
-        return align_single_result
+    def end_routine_factory(self, desired_species):
+        super_end = super().end_routine
+        def end_routine(result):
+            df = super_end(result)
+            df = df[list(desired_species)]
+            return df
+        return end_routine
 
     def tearDown(self):
         # save results
@@ -51,18 +46,10 @@ class ZScoreTest(TEvalTest):
 
     def _test_single(self):
         desired_species = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
-        all_species = [s.name for s in self.specification.model.species]
-        targets = [all_species.index(s) for s in desired_species]
-        align_results = self.align_results_factory(self.check_data['time'], targets, desired_species)
-
-        results = self.run_simulations(end_routine=align_results)
-        for df in results:
-            df.set_index('time', inplace=True)
-        df = pd.concat(results, axis=1)
-        all_results = pd.concat([df.T.groupby(by=df.columns).mean().T, df.T.groupby(by=df.columns).std().T], axis=1)
-
+        end_routine = self.end_routine_factory(desired_species=desired_species)
+        dfs = self.run_simulations(end_routine=end_routine)
+        all_results = self.consolidate_data(dfs)
         check_targets = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
-        all_results.columns = [c + '-mean' if i < len(check_targets) else c + '-sd' for i,c in enumerate(all_results.columns)]
 
         z_ts = self.z_score_for_mean(all_results, check_targets, self.check_data, self.n)
         y_ts = None
