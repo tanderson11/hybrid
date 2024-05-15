@@ -81,6 +81,10 @@ class TrajectoryTest(TEvalTest):
 
 class MeanTest(TrajectoryTest):
     def consolidate_data(self, dfs):
+        for _df in dfs:
+            _df.index = _df.index.round(4)
+            _df = _df.loc[~_df.index.duplicated(keep='first')]
+
         df = pd.concat(dfs, axis=1)
         means = df.T.groupby(by=df.columns).mean().T
         means.columns = [c + '-mean' for c in means.columns]
@@ -89,6 +93,8 @@ class MeanTest(TrajectoryTest):
         df = pd.concat([means, stds], axis=1)
         df = df.round(4)
         df.index = df.index.round(4)
+
+        _df = pd.concat(dfs, axis=1)
         return df
 
     def _test_single(self):

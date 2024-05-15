@@ -52,8 +52,7 @@ class History():
     def restricted_values(self, t, decimal_places=6):
         t_restrict = pd.Series(t).round(decimals=decimal_places)
         t_series = pd.Series(self.t_history).round(decimals=decimal_places)
-        mask = t_series.isin(t_restrict) | (self.t_history == self.t)
-
+        mask = (t_series.isin(t_restrict) | (self.t_history == self.t)) & ~t_series.duplicated()
         return self.t_history[mask], self.y_history[:, mask]
 
 class Run():
