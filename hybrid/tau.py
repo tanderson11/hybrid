@@ -4,12 +4,17 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.optimize import fsolve
 
 from hybrid.gillespie import GillespieSimulator
 from hybrid.simulator import StepStatus, Step, Run
 
 class TauNotImplementedError(NotImplementedError):
     """Attempted to use a tau leaping algorithm feature that has not been implemented."""
+
+class Method(Enum):
+    explicit = 'explicit'
+    implicit = 'implicit'
 
 class TauLeapers(Enum):
     gp = 'gp'
@@ -51,6 +56,7 @@ class TauRun(Run):
 @dataclass(frozen=True)
 class TauLeapOptions():
     leap_type: str = 'species'
+    method: str = 'explicit'
     epsilon: float=0.01
     rejection_multiple: float=10
     gillespie_steps_on_rejection: int=100
@@ -69,6 +75,7 @@ class TauLeapSimulator(GillespieSimulator):
         self.n_c = simulator_options.critical_threshold
         self.rejection_multiple = simulator_options.rejection_multiple
         self.gillespie_steps_on_rejection = simulator_options.gillespie_steps_on_rejection
+        self.method = Method(simulator_options.method)
         self.leap_type = TauLeapers(simulator_options.leap_type)
         if self.leap_type == TauLeapers.gp:
             print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
@@ -123,16 +130,15 @@ class TauLeapSimulator(GillespieSimulator):
             return self.gillespie_step_wrapper(t, y, t_end, rng, t_eval)
         return self.tau_step(t, y, t_end, rng, t_eval)
 
-    def tau_leap_proposal(self, t, y, propensities, critical_reactions):
-        #tau_prime = self.tau_leap_proposal(y, self.epsilon, propensities[~critical_reactions], k[~critical_reactions], self.N[:, ~critical_reactions], self.kinetic_order_matrix[:, ~critical_reactions])
-
+    def candidate_time(self, t, y, propensities, reaction_mask):
+        """Calculate a value of tau to leap forward in time that satisfies the leap condition for the reactions with value True in reaction_mask."""
         if self.leap_type == TauLeapers.gp:
-            return self.gp_tau_leap_proposal(y, self.epsilon, propensities[~critical_reactions], self.N[:, ~critical_reactions], self.kinetic_order_matrix[:, ~critical_reactions])
+            return self.gp_tau_leap_proposal(y, self.epsilon, propensities[reaction_mask], self.N[:, reaction_mask], self.kinetic_order_matrix[:, reaction_mask])
         elif self.leap_type == TauLeapers.corrected:
             k = self.k(t) if self.inhomogeneous else self.k
-            return self.corrected_tau_leap_proposal(y, self.epsilon, propensities[~critical_reactions], k, self.N[:, ~critical_reactions], self.kinetic_order_matrix[:, ~critical_reactions])
+            return self.corrected_tau_leap_proposal(y, self.epsilon, propensities[reaction_mask], k, self.N[:, reaction_mask], self.kinetic_order_matrix[:, reaction_mask])
         elif self.leap_type == TauLeapers.species:
-            return self.species_tau_leap_proposal(y, self.epsilon, self.g, propensities[~critical_reactions], self.N[:, ~critical_reactions])
+            return self.species_tau_leap_proposal(y, self.epsilon, self.g, propensities[reaction_mask], self.N[:, reaction_mask])
         else:
             raise ValueError(f"unknown or unimplemented leap type {self.leap_type}")
 
@@ -182,11 +188,17 @@ class TauLeapSimulator(GillespieSimulator):
         return g
 
     @staticmethod
-    def species_tau_leap_proposal(y, epsilon, g, propensities, N):
-        """Propose a tau leap that uniformly bounds changes in propensities by a change in species approximation. Cao et al 2006 formula (33)."""
-        # Cao et al. 2006 formula (33)
+    def calculate_mu_sigma(N, propensities):
         mu_hat_i = N @ propensities
         sigma_2_hat_i = (N**2) @ propensities
+
+        return mu_hat_i, sigma_2_hat_i
+
+    @classmethod
+    def species_tau_leap_proposal(cls, y, epsilon, g, propensities, N):
+        """Propose a tau leap that uniformly bounds changes in propensities by a change in species approximation. Cao et al 2006 formula (33)."""
+        # Cao et al. 2006 formula (33)
+        mu_hat_i, sigma_2_hat_i = cls.calculate_mu_sigma(N, propensities)
         # calculate g vector (if it depends on y) or use constant g vector
         g = g(y) if not isinstance(g, np.ndarray) else g
 
@@ -260,16 +272,21 @@ class TauLeapSimulator(GillespieSimulator):
         return min(tau1, tau2)
 
     @staticmethod
-    def tau_update_proposal(N, tau, propensities, rng):
+    def explicit_tau_update_proposal(N, tau, propensities, rng, return_firings=False):
         reaction_firings = rng.poisson(tau * propensities)
         update = np.sum(reaction_firings * N, axis=1)
+        if return_firings:
+            return update, reaction_firings
         return update
 
-    def tau_update_proposal_avoiding_negatives(self, N, y, tau, propensities, rng):
-        """Get a valid leap, halving time of leap and redrawing if a negative total would be reached."""
+    def tau_update_proposal_avoiding_negatives(self, N, y, t, tau, propensities, rng, method=Method.explicit, propensity_calculator=None):
         bad_update_flag = True
         while bad_update_flag:
-            update = self.tau_update_proposal(N, tau, propensities, rng)
+            if method == Method.explicit:
+                update = self.explicit_tau_update_proposal(N, tau, propensities, rng)
+            else:
+                assert method == Method.implicit
+                update = self.implicit_tau_update_proposal(N, y, t, tau, propensities, rng, propensity_calculator)
 
             if not ((y + update) < 0).any():
                 bad_update_flag = False
@@ -280,8 +297,35 @@ class TauLeapSimulator(GillespieSimulator):
                 tau = tau/2
         return tau, update
 
+    @classmethod
+    def implicit_tau_update_proposal(cls, N, y, t, tau, propensities, rng, propensity_calculator):
+        # Sandmann 2009 summarizing Rathinam 2003
+
+        # number of firings from the explicit method
+        explicit_update, reaction_firings = cls.explicit_tau_update_proposal(N, tau, propensities, rng, return_firings=True)
+        # convert firings => mean 0
+        mean_0 = explicit_update - tau * N @ propensities
+        # now solve the implicit equation by first defining an objective function
+        def objective_function(y_end):
+            y_end_propensities = propensity_calculator(t+tau, y_end)
+            mean_y_end_firings = tau * y_end_propensities
+            return y_end - y - mean_0 - np.sum(mean_y_end_firings * N, axis=1)
+
+        def calculate_k_j(y_end_propensities):
+            return reaction_firings + tau * y_end_propensities - tau * propensities
+
+        y_end = fsolve(objective_function, y)
+        y_end_propensities = propensity_calculator(t+tau, y_end)
+        # after calculating y_end, we will slightly adjust it to get a stoichiometrically realizable, integer-valued vector
+        k_j = calculate_k_j(y_end_propensities)
+        k_j = np.round(k_j)
+        update = N @ k_j
+        return update
+
     def tau_step(self, t, y, t_end, rng, t_eval):
+        # a tracker variable if a Gillespie step is made, initialize as None
         pathway = None
+
         propensities = self.propensity_function(t, y)
         total_propensity = np.sum(propensities)
 
@@ -293,7 +337,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau_prime = np.inf
         else:
             #import pdb; pdb.set_trace()
-            tau_prime = self.tau_leap_proposal(t, y, propensities, critical_reactions)
+            tau_prime = self.candidate_time(t, y, propensities, ~critical_reactions)
             tau_prime = min(t_end - t, tau_prime)
 
         if tau_prime < self.rejection_multiple / total_propensity:
@@ -309,7 +353,12 @@ class TauLeapSimulator(GillespieSimulator):
         # no critical events took place in our proposed leap forward of tau_prime, so we execute that leap
         if tau_prime < tau_prime_prime:
             tau = tau_prime
-            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, tau, propensities[~critical_reactions], rng)
+            propensity_calculator = None
+            if self.method == Method.implicit:
+                def propensity_calculator(t, y):
+                    propensities = self.propensity_function(t, y)
+                    return propensities[~critical_reactions]
+            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, method=self.method, propensity_calculator=propensity_calculator)
 
             status = TauStepStatus.leap
         # a single critical event took place at tau_prime_prime, adjudicate that event and the leap of non-critical reactions
