@@ -1,5 +1,5 @@
 from typing import List, Callable, NamedTuple
-from enum import IntEnum
+from enum import IntEnum, auto
 from collections import Counter
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -116,6 +116,16 @@ class Run():
     def get_step_kwargs(self):
         return {}
 
+class DummyStatus(StepStatus):
+    failure = -1
+    t_end = 0
+    t_end_for_discontinuity = auto()
+
+def get_updated(ntuple, updates):
+    tuple_dict = ntuple._asdict()
+    tuple_dict.update(updates)
+    return ntuple.__class__(**tuple_dict)
+
 class Step(NamedTuple):
     t_history: ArrayLike
     y_history: ArrayLike
@@ -124,6 +134,7 @@ class Step(NamedTuple):
 
 class Simulator(ABC):
     run_klass = Run
+    status_klass = DummyStatus
     def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
@@ -166,7 +177,7 @@ class Simulator(ABC):
         else:
             self.propensity_function = self.construct_propensity_function(k, kinetic_order_matrix, inhomogeneous, jit=jit)
 
-        self.species_lables = np.array(species_labels)
+        self.species_labels = np.array(species_labels)
         self.pathway_labels = np.array(pathway_labels)
 
     def initiate_run(self, t0, y0):
@@ -235,6 +246,10 @@ class Simulator(ABC):
             which records the kinds of termination that occurred during each step of simulation.
         """
         y0 = np.asarray(y0)
+
+        if (y0.round() != y0).any():
+            print("WARNING: initial condition is not on the integer lattice, rounding.")
+            y0 = y0.round()
         assert self.N.shape[0] == self.kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
         assert len(t_span) == 2
         t0, t_end = t_span
@@ -261,5 +276,74 @@ class Simulator(ABC):
     def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
         ...
 
-class HybridSimulator(Simulator):
-    pass
+class DiscontinuityAwareSimulator(Simulator):
+    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs) -> History:
+        """Simulate the reaction manifold between two time points given a starting state.
+
+        Parameters
+        ----------
+        t_span : ArrayLike
+            A tuple of times `(t0, t_end)` to simulate between.
+        y0 : ArrayLike
+            A vector y_i of the quantity of species i at time 0.
+        rng : np.random.Generator
+            The random number generator to use for all random numbers needed during simulation.
+        t_eval : ArrayLike, optional
+            A vector of time points at which to evaluate the system and return in the final results.
+            If None, evaluate at points chosen by the simulator, by default None.
+        halt : Callable, optional
+            A function with signature halt(t, y) => bool that stops execution on a return of True.
+            If None, always simulate to t_end. Defaults to None.
+
+        Returns
+        -------
+        History
+            The results of the run with attributes `t`, `y` (the time and state of the system at t_end),
+            `t_history` and `y_history` (all time and states evaluated), and `status_counter`,
+            which records the kinds of termination that occurred during each step of simulation.
+        """
+        y0 = np.asarray(y0)
+
+        if (y0.round() != y0).any():
+            print("WARNING: initial condition is not on the integer lattice, rounding.")
+            y0 = y0.round()
+        assert self.N.shape[0] == self.kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
+        assert len(t_span) == 2
+        t0, t_end = t_span
+
+        if t_eval is None: t_eval = np.array([])
+
+        run = self.initiate_run(t0, y0)
+
+        t = t0
+        while t < t_end:
+            discontinuity_flag = False
+            discontinuity_mask = np.asarray(self.discontinuities) <= t
+            # (no discontinuities)
+            if len(self.discontinuities) == 0:
+                next_discontinuity = np.inf
+            else:
+                discontinuity_index = np.argmin(discontinuity_mask)
+                # (all discontinuities passed because our mininmum satisfying value is True, so all values are true)
+                if discontinuity_mask[discontinuity_index]:
+                    next_discontinuity = np.inf
+                else:
+                    next_discontinuity = self.discontinuities[discontinuity_index]
+
+            if next_discontinuity < t_end:
+                discontinuity_flag = True
+
+            t_end_step = min(t_end, np.nextafter(next_discontinuity, 0))
+
+            step = self.step(*run.current_state(), t_end_step, rng, t_eval, **step_kwargs, **run.get_step_kwargs())
+
+            if discontinuity_flag and step.status == self.status_klass.t_end:
+                print(f"Doing surgery to avoid discontinuity: skipping from {step.t_history[-1]} to {np.nextafter(next_discontinuity, t_end)}")
+                step = get_updated(step, {'status':self.status_klass.t_end_for_discontinuity})
+                step.t_history[-1] = np.nextafter(next_discontinuity, t_end)
+
+            t = run.handle_step(step)
+            if halt is not None and halt(run.get_t(), run.get_y()):
+                break
+
+        return run.get_history()

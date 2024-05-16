@@ -10,7 +10,7 @@ from scipy.integrate import solve_ivp
 import scipy.special
 import numba
 
-from .simulator import Simulator, StepStatus
+from .simulator import DiscontinuityAwareSimulator, StepStatus
 
 class HybridStepStatus(StepStatus):
     failure = -1
@@ -22,11 +22,11 @@ class HybridStepStatus(StepStatus):
     user_event = auto()
 
     def event_like(self):
-        return self > HybridStepStatus.t_end
+        return self > self.t_end
 
 CONTRIVED_PATHWAY = -1
 
-class StepUpdate(NamedTuple):
+class Step(NamedTuple):
     t_history: np.ndarray
     y_history: np.ndarray
     status: HybridStepStatus
@@ -100,7 +100,8 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
     return partition_change_finder
 
-class HybridSimulator(Simulator):
+class HybridSimulator(DiscontinuityAwareSimulator):
+    status_klass = HybridStepStatus
     def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
@@ -277,26 +278,6 @@ class HybridSimulator(Simulator):
 
         t_span = [t, t_end]
 
-        discontinuity_flag = False
-
-        discontinuity_mask = np.asarray(self.discontinuities) <= t
-        # (no discontinuities)
-        if len(self.discontinuities) == 0:
-            next_discontinuity = np.inf
-        else:
-            discontinuity_index = np.argmin(discontinuity_mask)
-            # (all discontinuities passed because our mininmum satisfying value is True, so all values are true)
-            if discontinuity_mask[discontinuity_index]:
-                next_discontinuity = np.inf
-            else:
-                next_discontinuity = self.discontinuities[discontinuity_index]
-
-        if next_discontinuity < t_end:
-            discontinuity_flag = True
-            # integrate only until the last float before the discontinuity
-            #print(f"Reducing t_end {t_span[-1]} => {np.nextafter(next_discontinuity, t)}. Discontinuity_index={discontinuity_index}")
-            t_span[-1] = np.nextafter(next_discontinuity, t)
-
         # not really a hitting *time* as this is a dimensionless quantity,
         # a random number drawn from the unit exponential distribution.
         # when the integral of the stochastic rates == hitting_point, an event occurs
@@ -314,26 +295,23 @@ class HybridSimulator(Simulator):
             if hitting_time < t_span[-1]:
                 #print(f"Removing discontinuity flag: t_end {t_span[-1]} => {hitting_time}")
                 t_span[-1] = hitting_time
-                # if discontinuity_flag was set, the upper limit was a discontinuity
-                # but now that we've lowered the upper limit, that is no longer the case
-                discontinuity_flag = False
         else:
             # a continuous event function that will record 0 when the hitting point is reached
             # this event function takes into account the contrived rate of no reaction
             events = [stochastic_event_finder_factory(t, self.simulation_options.contrived_no_reaction_rate)]
             event_type_cutoffs = [0]
-            event_types = [HybridStepStatus.stochastic_event]
+            event_types = [self.status_klass.stochastic_event]
 
         if self.simulation_options.halt_on_partition_change:
             partition_change_finder = partition_change_finder_factory(self.simulation_options.partition_fraction_for_halt)
             events.append(partition_change_finder)
             event_type_cutoffs.append(self.kinetic_order_matrix.shape[1])
-            event_types.append(HybridStepStatus.partition_change)
+            event_types.append(self.status_klass.partition_change)
 
         if len(user_events) > 0:
             events.extend(user_events)
             event_type_cutoffs.append(len(events)-1)
-            event_types.append(HybridStepStatus.user_event)
+            event_types.append(self.status_klass.user_event)
         # all our events should be terminal
         for e in events:
             assert e.terminal
@@ -365,7 +343,7 @@ class HybridSimulator(Simulator):
 
         # this branching logic tells us what caused integration to stop
         if ivp_step_status == -1:
-            status = HybridStepStatus.failure
+            status = self.status_klass.failure
             #print(step_solved)
             assert False, "integration step failed"
         elif ivp_step_status == 0:
@@ -373,14 +351,14 @@ class HybridSimulator(Simulator):
             # but if we are approximating the stochastic rates as constant between events,
             # then hitting the upper limit actually corresponds to a stochastic event,
             # unless the upper limit is also the true end of the integration
-            if not discontinuity_flag and self.simulation_options.approximate_rtot and t_end > t_span[-1]:
-                status = HybridStepStatus.stochastic_event
+            if self.simulation_options.approximate_rtot and t_span[-1] < t_end:
+                status = self.status_klass.stochastic_event
                 for t_event in step_solved.t_events:
                     assert(len(t_event) == 0)
 
                 t_event, y_event = t_history[-1], y_history[:, -1]
             else:
-                status = HybridStepStatus.t_end
+                status = self.status_klass.t_end
         else:
             # if we reach here, an event has occured
             assert ivp_step_status == 1
@@ -409,28 +387,24 @@ class HybridSimulator(Simulator):
                 assert False, f"Couldn't assign a status to event. Event index = {event_index}. event_cutoffs={event_type_cutoffs}. event_types={event_types}."
 
         ## now we know our step status. what shall we do about it?
-        if status == HybridStepStatus.partition_change:
+        if status == self.status_klass.partition_change:
             print(f"Stopping for partition change. t={t_event}")
 
         # round the species quantities at our final time point
         y_history[:, -1] = round_with_method(y_history[:, -1], self.simulation_options.round_randomly, rng)
 
         # if we reached the true upper limit of integration simply return the current values of t and y
-        if status == HybridStepStatus.t_end:
-            if discontinuity_flag:
-                status = HybridStepStatus.t_end_for_discontinuity
-                print(f"Doing surgery to avoid discontinuity: skipping from {t_history[-1]} to {np.nextafter(next_discontinuity, t_end)}")
-                t_history[-1] = np.nextafter(next_discontinuity, t_end)
+        if status == self.status_klass.t_end:
             ## FIRST RETURN
-            return StepUpdate(t_history, y_history, status, step_solved.nfev)
+            return Step(t_history, y_history, status, step_solved.nfev)
 
-        assert HybridStepStatus.event_like(status)
+        assert self.status_klass.event_like(status)
 
         # if the event isn't a stochastic event, then we were halting to reassess partition
         # so: we simply return the state of the system at the time of our event
-        if not status == HybridStepStatus.stochastic_event:
-            return StepUpdate(t_history, y_history, status, step_solved.nfev)
-        assert status == HybridStepStatus.stochastic_event
+        if not status == self.status_klass.stochastic_event:
+            return Step(t_history, y_history, status, step_solved.nfev)
+        assert status == self.status_klass.stochastic_event
 
         # if the event was a stochastic event, cause it to happen
         # first by determining which event happened
@@ -456,7 +430,7 @@ class HybridSimulator(Simulator):
 
         # don't apply any update if our selection was the contrived rate of no reaction
         if self.simulation_options.contrived_no_reaction_rate is not None and np.squeeze(path_index) == len(valid_selections)-1:
-            return StepUpdate(t_history, y_history, HybridStepStatus.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
+            return Step(t_history, y_history, self.status_klass.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
 
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
@@ -465,7 +439,7 @@ class HybridSimulator(Simulator):
         y_history[:, -1] += update
 
         assert len(path_index)==1
-        return StepUpdate(t_history, y_history, status, step_solved.nfev, pathway=path_index[0])
+        return Step(t_history, y_history, status, step_solved.nfev, pathway=path_index[0])
 
 class HybridNotImplementedError(NotImplementedError):
     """Attempted to use a hybrid algorithm feature that has not been implemented."""
