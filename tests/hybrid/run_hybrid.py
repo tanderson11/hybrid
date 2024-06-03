@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from tests.discover import discover_tests
-from tests.filesystem_test import FilesystemTestMeta, EndpointTest, TrajectoryTest
+from tests.filesystem_test import FilesystemTestMeta, EndpointTest
 
 decaying_isomerization_tests = discover_tests(os.path.dirname(__file__), './decaying_isomerization', include_check=True)
 schlogl_tests = discover_tests(os.path.dirname(__file__), './schlogl')

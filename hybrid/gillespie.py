@@ -1,3 +1,4 @@
+from enum import auto
 from dataclasses import dataclass
 import numpy as np
 from numba import jit as numbajit
@@ -9,13 +10,15 @@ from .simulator import Step, StepStatus, Simulator
 class GillespieStepStatus(StepStatus):
     rejected = -1
     t_end = 0
-    stochastic = 1
+    t_end_for_discontinuity = auto()
+    stochastic = auto()
 
 @dataclass(frozen=True)
 class GillespieOptions():
     pass
 
 class GillespieSimulator(Simulator):
+    status_klass = GillespieStepStatus
     def step(self, t, y, t_end, rng, t_eval):
         if self.inhomogeneous:
             return self.gillespie_step(t, y, t_end, rng, t_eval)
@@ -139,14 +142,14 @@ class GillespieSimulator(Simulator):
     
         if t + hitting_time > t_end:
             update = np.zeros_like(y)
-            return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), GillespieStepStatus.t_end)
+            return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), self.status_klass.t_end)
 
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
         pathway, update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
-        return Step(t_history, y_history, GillespieStepStatus.stochastic, pathway=pathway)
+        return Step(t_history, y_history, self.status_klass.stochastic, pathway=pathway)
 
     def homogeneous_gillespie_step(self, t, y, t_end, rng, t_eval):
         propensities = self.propensity_function(t, y)
@@ -156,9 +159,9 @@ class GillespieSimulator(Simulator):
 
         if t + hitting_time > t_end:
             update = np.zeros_like(y)
-            return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), GillespieStepStatus.t_end)
+            return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), self.status_klass.t_end)
 
         pathway, update = self.gillespie_update_proposal(self.N, propensities, rng)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
-        return Step(t_history, y_history, GillespieStepStatus.stochastic, pathway)
+        return Step(t_history, y_history, self.status_klass.stochastic, pathway)

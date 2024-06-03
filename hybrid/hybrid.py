@@ -10,7 +10,7 @@ from scipy.integrate import solve_ivp
 import scipy.special
 import numba
 
-from .simulator import DiscontinuityAwareSimulator, StepStatus
+from .simulator import Simulator, StepStatus
 
 class HybridStepStatus(StepStatus):
     failure = -1
@@ -100,7 +100,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
     return partition_change_finder
 
-class HybridSimulator(DiscontinuityAwareSimulator):
+class HybridSimulator(Simulator):
     status_klass = HybridStepStatus
     def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
@@ -146,11 +146,10 @@ class HybridSimulator(DiscontinuityAwareSimulator):
         """
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
-        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+        super().__init__(k, N, kinetic_order_matrix, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         if isinstance(partition_function, PartitionScheme):
             partition_function = partition_function.partition_function
         self.partition_function = partition_function
-        self.discontinuities = discontinuities if discontinuities is not None else []
         self.simulation_options = HybridSimulationOptions(**kwargs)
         if dydt_function is None:
             self.dydt = self.construct_dydt_function(N, jit)

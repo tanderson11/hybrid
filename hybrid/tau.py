@@ -1,7 +1,8 @@
 from typing import Callable, Union
-from enum import Enum
+from enum import Enum, auto
 from dataclasses import dataclass
 
+import numba
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import fsolve
@@ -22,17 +23,13 @@ class TauLeapers(Enum):
     species = 'species'
 
 class TauStepStatus(StepStatus):
-    gillespie_rejected = -3
     rejected_for_gillespie = -2
     rejected = -1
-    leap = 0
-    leap_critical_combined = 1
-    gillespie_t_end = 2
-    gillespie_stochastic = 3
-
-    @classmethod
-    def from_gillespie_status(cls, status):
-        return cls[f'gillespie_{status.name}']
+    t_end = 0
+    t_end_for_discontinuity = auto()
+    leap = auto()
+    leap_critical_combined = auto()
+    stochastic = auto()
 
 class TauRun(Run):
     def __init__(self, t0, y0, steps_on_rejection, history_length=1000000) -> None:
@@ -43,7 +40,7 @@ class TauRun(Run):
     def handle_step(self, step):
         if step.status == TauStepStatus.rejected_for_gillespie:
             self.forced_gillespie_steps = self.steps_on_rejection
-        if step.status == TauStepStatus.gillespie_stochastic:
+        if step.status == TauStepStatus.stochastic:
             assert self.forced_gillespie_steps > 0
             self.forced_gillespie_steps -= 1
 
@@ -66,9 +63,10 @@ class TauLeapOptions():
 
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
-        super().__init__(k, N, kinetic_order_matrix, jit, propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
-
+    status_klass = TauStepStatus
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, discontinuities=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
+        super().__init__(k, N, kinetic_order_matrix, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+        self.N2 = self.N**2
         simulator_options = TauLeapOptions(**option_kwargs)
 
         self.epsilon = simulator_options.epsilon
@@ -121,7 +119,7 @@ class TauLeapSimulator(GillespieSimulator):
 
     def gillespie_step_wrapper(self, t, y, t_end, rng, t_eval):
         g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
-        status = TauStepStatus.from_gillespie_status(g_step.status)
+        status = g_step.status
 
         return Step(g_step.t_history, g_step.y_history, status)
 
@@ -138,7 +136,7 @@ class TauLeapSimulator(GillespieSimulator):
             k = self.k(t) if self.inhomogeneous else self.k
             return self.corrected_tau_leap_proposal(y, self.epsilon, propensities[reaction_mask], k, self.N[:, reaction_mask], self.kinetic_order_matrix[:, reaction_mask])
         elif self.leap_type == TauLeapers.species:
-            return self.species_tau_leap_proposal(y, self.epsilon, self.g, propensities[reaction_mask], self.N[:, reaction_mask])
+            return self.species_tau_leap_proposal(y, self.epsilon, self.g, propensities[reaction_mask], self.N[:, reaction_mask], self.N2[:, reaction_mask])
         else:
             raise ValueError(f"unknown or unimplemented leap type {self.leap_type}")
 
@@ -157,6 +155,7 @@ class TauLeapSimulator(GillespieSimulator):
         if (shohor == 1).all():
             return hor
 
+        @numba.jit(nopython=True)
         def g(y):
             g = np.zeros_like(y)
             g = np.where(
@@ -188,17 +187,19 @@ class TauLeapSimulator(GillespieSimulator):
         return g
 
     @staticmethod
-    def calculate_mu_sigma(N, propensities):
+    @numba.jit(nopython=True)
+    def calculate_mu_sigma(N, N2, propensities):
         mu_hat_i = N @ propensities
-        sigma_2_hat_i = (N**2) @ propensities
+        # N2 = N**2 but precalculated for efficiency
+        sigma_2_hat_i = N2 @ propensities
 
         return mu_hat_i, sigma_2_hat_i
 
     @classmethod
-    def species_tau_leap_proposal(cls, y, epsilon, g, propensities, N):
+    def species_tau_leap_proposal(cls, y, epsilon, g, propensities, N, N2):
         """Propose a tau leap that uniformly bounds changes in propensities by a change in species approximation. Cao et al 2006 formula (33)."""
         # Cao et al. 2006 formula (33)
-        mu_hat_i, sigma_2_hat_i = cls.calculate_mu_sigma(N, propensities)
+        mu_hat_i, sigma_2_hat_i = cls.calculate_mu_sigma(N, N2, propensities)
         # calculate g vector (if it depends on y) or use constant g vector
         g = g(y) if not isinstance(g, np.ndarray) else g
 
@@ -298,7 +299,7 @@ class TauLeapSimulator(GillespieSimulator):
         return tau, update
 
     @classmethod
-    def implicit_tau_update_proposal(cls, N, y, t, tau, propensities, rng, propensity_calculator):
+    def implicit_tau_update_proposal(cls, N, y, t, tau, propensities, rng, propensity_calculator, return_firings=False):
         # Sandmann 2009 summarizing Rathinam 2003
 
         # number of firings from the explicit method
@@ -311,6 +312,7 @@ class TauLeapSimulator(GillespieSimulator):
             mean_y_end_firings = tau * y_end_propensities
             return y_end - y - mean_0 - np.sum(mean_y_end_firings * N, axis=1)
 
+        # closes around reaction_firings
         def calculate_k_j(y_end_propensities):
             return reaction_firings + tau * y_end_propensities - tau * propensities
 
@@ -320,6 +322,8 @@ class TauLeapSimulator(GillespieSimulator):
         k_j = calculate_k_j(y_end_propensities)
         k_j = np.round(k_j)
         update = N @ k_j
+        if return_firings:
+            return update, k_j
         return update
 
     def tau_step(self, t, y, t_end, rng, t_eval):
@@ -342,7 +346,7 @@ class TauLeapSimulator(GillespieSimulator):
 
         if tau_prime < self.rejection_multiple / total_propensity:
             # reject this step and switch to Gillespie's algorithm for a fixed # of steps
-            return Step(None, None, TauStepStatus.rejected_for_gillespie)
+            return Step(None, None, self.status_klass.rejected_for_gillespie)
 
         if critical_sum == 0:
             tau_prime_prime = np.inf
@@ -353,6 +357,7 @@ class TauLeapSimulator(GillespieSimulator):
         # no critical events took place in our proposed leap forward of tau_prime, so we execute that leap
         if tau_prime < tau_prime_prime:
             tau = tau_prime
+
             propensity_calculator = None
             if self.method == Method.implicit:
                 def propensity_calculator(t, y):
@@ -360,19 +365,22 @@ class TauLeapSimulator(GillespieSimulator):
                     return propensities[~critical_reactions]
             tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, method=self.method, propensity_calculator=propensity_calculator)
 
-            status = TauStepStatus.leap
+            if t+tau_prime == t_end:
+                status = self.status_klass.t_end
+            else:
+                status = self.status_klass.leap
         # a single critical event took place at tau_prime_prime, adjudicate that event and the leap of non-critical reactions
         else:
             tau = tau_prime_prime
             #print(tau)
             #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
             pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng)
-            tau_update = self.tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
+            tau_update = self.explicit_tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
 
             if ((y+update) < 0 ).any():
-                return Step(None, None, TauStepStatus.rejected)
-            status = TauStepStatus.leap_critical_combined
+                return Step(None, None, self.status_klass.rejected)
+            status = self.status_klass.leap_critical_combined
 
         t_history, y_history = self.expand_step_with_t_eval(t,y,tau,update,t_eval,t_end)
 

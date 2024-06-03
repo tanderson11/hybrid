@@ -135,7 +135,7 @@ class Step(NamedTuple):
 class Simulator(ABC):
     run_klass = Run
     status_klass = DummyStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -167,6 +167,8 @@ class Simulator(ABC):
         self.k = k
         self.N = N.astype(float)
         self.kinetic_order_matrix = kinetic_order_matrix.astype(float)
+
+        self.discontinuities = discontinuities if discontinuities is not None else []
 
         self.jit = jit
         if propensity_function is not None:
@@ -260,63 +262,6 @@ class Simulator(ABC):
 
         t = t0
         while t < t_end:
-            step = self.step(*run.current_state(), t_end, rng, t_eval, **step_kwargs, **run.get_step_kwargs())
-            t = run.handle_step(step)
-            if halt is not None and halt(run.get_t(), run.get_y()):
-                break
-
-        return run.get_history()
-
-    @abstractmethod
-    def step(self, t, y, t_end, rng, t_eval):
-        ...
-
-    @classmethod
-    @abstractmethod
-    def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
-        ...
-
-class DiscontinuityAwareSimulator(Simulator):
-    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs) -> History:
-        """Simulate the reaction manifold between two time points given a starting state.
-
-        Parameters
-        ----------
-        t_span : ArrayLike
-            A tuple of times `(t0, t_end)` to simulate between.
-        y0 : ArrayLike
-            A vector y_i of the quantity of species i at time 0.
-        rng : np.random.Generator
-            The random number generator to use for all random numbers needed during simulation.
-        t_eval : ArrayLike, optional
-            A vector of time points at which to evaluate the system and return in the final results.
-            If None, evaluate at points chosen by the simulator, by default None.
-        halt : Callable, optional
-            A function with signature halt(t, y) => bool that stops execution on a return of True.
-            If None, always simulate to t_end. Defaults to None.
-
-        Returns
-        -------
-        History
-            The results of the run with attributes `t`, `y` (the time and state of the system at t_end),
-            `t_history` and `y_history` (all time and states evaluated), and `status_counter`,
-            which records the kinds of termination that occurred during each step of simulation.
-        """
-        y0 = np.asarray(y0)
-
-        if (y0.round() != y0).any():
-            print("WARNING: initial condition is not on the integer lattice, rounding.")
-            y0 = y0.round()
-        assert self.N.shape[0] == self.kinetic_order_matrix.shape[0] == y0.shape[0], "N and kinetic_order_matrix should have # rows == # of species"
-        assert len(t_span) == 2
-        t0, t_end = t_span
-
-        if t_eval is None: t_eval = np.array([])
-
-        run = self.initiate_run(t0, y0)
-
-        t = t0
-        while t < t_end:
             discontinuity_flag = False
             discontinuity_mask = np.asarray(self.discontinuities) <= t
             # (no discontinuities)
@@ -347,3 +292,12 @@ class DiscontinuityAwareSimulator(Simulator):
                 break
 
         return run.get_history()
+
+    @abstractmethod
+    def step(self, t, y, t_end, rng, t_eval):
+        ...
+
+    @classmethod
+    @abstractmethod
+    def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
+        ...
