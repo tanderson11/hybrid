@@ -3,12 +3,11 @@ from dataclasses import dataclass
 import numpy as np
 from numba import jit as numbajit
 from scipy.integrate import quad
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, least_squares
 
 from .simulator import Step, StepStatus, Simulator
 
 class GillespieStepStatus(StepStatus):
-    rejected = -1
     t_end = 0
     t_end_for_discontinuity = auto()
     stochastic = auto()
@@ -64,14 +63,12 @@ class GillespieSimulator(Simulator):
         #hitting_point = np.log(1/rng.random())
 
         f = cls.inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function)
-        hitting_time, fevs, term, message = fsolve(f, x0=0.1, full_output=True)
-        hitting_time = hitting_time[0]
-        if term != 1:
-            residual = f(hitting_time)
-            if residual > 1e-8:
-                #import pdb; pdb.set_trace()
-                raise ValueError('fsolve failed')
-        #print(y, hitting_time)
+
+        least_sqs = least_squares(f, x0=0.1, bounds=(0.0, np.inf))
+        hitting_time = least_sqs.x[0]
+
+        if not least_sqs.success:
+            raise ValueError('least squares failed')
 
         return hitting_time
 
@@ -128,6 +125,7 @@ class GillespieSimulator(Simulator):
         return t_history, y_history
 
     def gillespie_step(self, t, y, t_end, rng, t_eval):
+        """Potentially inhomogeneous Gillespie step."""
         zero_pop_reactant = np.broadcast_to(np.expand_dims((y == 0), axis=1), self.kinetic_order_matrix.shape)
         kinetically_involved = (self.kinetic_order_matrix > 0)
         noncontributing_reactions = (zero_pop_reactant & kinetically_involved).any(axis=0)

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numba
 import numpy as np
 from numpy.typing import ArrayLike
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, least_squares
 
 from hybrid.gillespie import GillespieSimulator
 from hybrid.simulator import StepStatus, Step, Run
@@ -16,6 +16,10 @@ class TauNotImplementedError(NotImplementedError):
 class Method(Enum):
     explicit = 'explicit'
     implicit = 'implicit'
+
+class TimeHandling(Enum):
+    homogeneous = 'homogeneous'
+    inhomogeneous = 'inhomogeneous'
 
 class TauLeapers(Enum):
     gp = 'gp'
@@ -54,6 +58,7 @@ class TauRun(Run):
 class TauLeapOptions():
     leap_type: str = 'species'
     method: str = 'explicit'
+    time_handling: str = 'homogeneous'
     epsilon: float=0.01
     rejection_multiple: float=10
     gillespie_steps_on_rejection: int=100
@@ -74,6 +79,7 @@ class TauLeapSimulator(GillespieSimulator):
         self.rejection_multiple = simulator_options.rejection_multiple
         self.gillespie_steps_on_rejection = simulator_options.gillespie_steps_on_rejection
         self.method = Method(simulator_options.method)
+        self.time_handling = TimeHandling(simulator_options.time_handling)
         self.leap_type = TauLeapers(simulator_options.leap_type)
         if self.leap_type == TauLeapers.gp:
             print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
@@ -83,8 +89,8 @@ class TauLeapSimulator(GillespieSimulator):
         self.species_creation_is_critical = simulator_options.species_creation_is_critical
         self.only_reactants_critical = simulator_options.only_reactants_critical
 
-        if self.inhomogeneous:
-            print("WARNING: inhomogeneous rates in Tau leap simulation. Will assume that rates are constant within leaps.")
+        if self.inhomogeneous and self.time_handling != TimeHandling.inhomogeneous:
+            print("WARNING: inhomogeneous rates in Tau leap simulation, but simulator hasn't been told to use inhomogeneous leaping. Is this a test?")
 
     def initiate_run(self, t0, y0):
         return self.run_klass(t0, y0, self.gillespie_steps_on_rejection)
@@ -115,20 +121,77 @@ class TauLeapSimulator(GillespieSimulator):
                 new_species_mask = ((self.N>0)[zero_specimens]).max(axis=0)
                 critical |= new_species_mask
 
+        # for only 1 reaction, we don't want to lose our dimension information
+        if len(critical.shape) == 0:
+            critical = np.array([critical])
+
         return critical
 
     def gillespie_step_wrapper(self, t, y, t_end, rng, t_eval):
-        g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
+        if self.time_handling == TimeHandling.inhomogeneous:
+            g_step = self.gillespie_step(t, y, t_end, rng, t_eval)
+        else:
+            g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
+
         status = g_step.status
 
         return Step(g_step.t_history, g_step.y_history, status)
 
     def step(self, t, y, t_end, rng, t_eval, do_gillespie=False):
         if do_gillespie:
-            return self.gillespie_step_wrapper(t, y, t_end, rng, t_eval)
+            gs = self.gillespie_step_wrapper(t, y, t_end, rng, t_eval)
+            return gs
         return self.tau_step(t, y, t_end, rng, t_eval)
 
-    def candidate_time(self, t, y, propensities, reaction_mask):
+    def candidate_time_inhomogeneous(self, t, y, propensities, reaction_mask, t_end):
+        assert self.leap_type == TauLeapers.species, "time inhomogeneous tau leaping is only supported with if leap type is species"
+        # approximately bound the change in each propensity *due to leaping* to one part in epsilon/2
+        tau = self.species_tau_leap_proposal(y, self.epsilon/2, self.g, propensities[reaction_mask], self.N[:, reaction_mask], self.N2[:, reaction_mask])
+        # bound the change in each propensity *due to explicit time dependence* to one part in epsilon/2
+        tau_prime = self.inhomogeneous_time_proposal(t, y, self.epsilon/2, propensities[reaction_mask], reaction_mask, min(t_end-t, tau))
+
+        print(tau, tau_prime, self.rejection_multiple/np.sum(propensities))
+        return min(tau, tau_prime)
+
+    def inhomogeneous_time_proposal(self, t, y, epsilon, propensities, reaction_mask, tau_max):
+        """Calculate a forward-leap time that bounds the changes in propensities due to explicit time dependence within one part in epsilon.
+
+        This only works if time dependence is entry-wise monotonic in the interval (t, t+tau_max)."""
+        end_propensities = self.propensity_function(t + tau_max, y)[reaction_mask]
+        # if a propensity moves from 0 to a positive number, then it will be impossible to bound the change in propensities
+        # by epsilon, so we should instead default to gillespie steps
+        if (end_propensities[propensities == 0] > 0).any():
+            return 0
+
+        nonzero_mask = propensities != 0
+        nonzero_propensities = propensities[nonzero_mask]
+
+        def calculate_nonzero_endpoint_props(tau):
+            tau = tau[0]
+            end_propensities = self.propensity_function(t + tau, y)[reaction_mask]
+            non_zero_end_propensities = end_propensities[nonzero_mask]
+            return non_zero_end_propensities
+
+        def calculate_largest_fraction_change(nonzero_end_propensities):
+            return np.max(np.abs((nonzero_propensities - nonzero_end_propensities)/nonzero_propensities))
+
+        # if the change at the endpoint doesn't break our tolerance, then accept the maximum time jump
+        # (recall monotonicity)
+        if calculate_largest_fraction_change(calculate_nonzero_endpoint_props([tau_max])) < epsilon:
+            return tau_max
+
+        def objective_function(tau):
+            '''Returns 0 when tau maximizes our tolerance for error due to explicit time dependence.'''
+            nonzero_end_propensities = calculate_nonzero_endpoint_props(tau)
+            part_change = calculate_largest_fraction_change(nonzero_end_propensities)
+            return np.abs(part_change - epsilon)
+        lsqs = least_squares(objective_function, x0=tau_max/2, bounds=(0.0, tau_max))
+        if not lsqs.success:
+            print(lsqs)
+            raise ValueError('least squares fit in time inhomogeneous leap failed')
+        return lsqs.x[0]
+
+    def candidate_time(self, t, y, propensities, reaction_mask, t_end):
         """Calculate a value of tau to leap forward in time that satisfies the leap condition for the reactions with value True in reaction_mask."""
         if self.leap_type == TauLeapers.gp:
             return self.gp_tau_leap_proposal(y, self.epsilon, propensities[reaction_mask], self.N[:, reaction_mask], self.kinetic_order_matrix[:, reaction_mask])
@@ -341,7 +404,10 @@ class TauLeapSimulator(GillespieSimulator):
             tau_prime = np.inf
         else:
             #import pdb; pdb.set_trace()
-            tau_prime = self.candidate_time(t, y, propensities, ~critical_reactions)
+            if self.inhomogeneous:
+                tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, ~critical_reactions, t_end)
+            else:
+                tau_prime = self.candidate_time(t, y, propensities, ~critical_reactions, t_end)
             tau_prime = min(t_end - t, tau_prime)
 
         if tau_prime < self.rejection_multiple / total_propensity:
@@ -351,7 +417,10 @@ class TauLeapSimulator(GillespieSimulator):
         if critical_sum == 0:
             tau_prime_prime = np.inf
         else:
-            tau_prime_prime = self.find_hitting_time_homogeneous(critical_sum, rng)
+            if self.time_handling == TimeHandling.inhomogeneous:
+                tau_prime_prime = self.find_hitting_time_inhomogenous(t, y, self.propensity_function, rng)
+            else:
+                tau_prime_prime = self.find_hitting_time_homogeneous(critical_sum, rng)
             #tau_prime_prime = 1 / critical_sum
 
         # no critical events took place in our proposed leap forward of tau_prime, so we execute that leap
