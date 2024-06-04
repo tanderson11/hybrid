@@ -1,6 +1,6 @@
 from typing import NamedTuple, Callable
 from dataclasses import dataclass
-from enum import auto
+from enum import Enum, auto
 import json
 from typing import Union
 
@@ -11,6 +11,7 @@ import scipy.special
 import numba
 
 from .simulator import Simulator, StepStatus
+from .eulermaruyama import em_solve_ivp
 
 class HybridStepStatus(StepStatus):
     failure = -1
@@ -160,13 +161,13 @@ class HybridSimulator(Simulator):
                 assert(isinstance(propensity_function, CPUDispatcher))
 
     @classmethod
-    def construct_dydt_function(cls, N, jit=True):
+    def construct_dydt_function(cls, N, expand=True, jit=True):
         if jit:
-            return cls.jit_dydt_factory(N)
+            return cls.jit_dydt_factory(N, expand=expand)
         return cls.dydt_factory(N)
 
     @staticmethod
-    def jit_dydt_factory(N):
+    def jit_dydt_factory(N, expand=True):
         @numba.jit(nopython=True)
         def jit_dydt(t, y_expanded, deterministic_mask, stochastic_mask, propensity_function, hitting_point):
             # by fiat the last entry of y will carry the integral of stochastic rates
@@ -268,6 +269,47 @@ class HybridSimulator(Simulator):
             return product_down_columns * k_of_t
         return jit_calculate_propensities
 
+    #def step(self, t, y, t_end, rng, t_eval, events=None):
+    #    if FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.deterministic:
+    #        return self.ode_step(t, y, t_end, rng, t_eval, events=events)
+    #    else:
+    #        assert FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.langevin
+    #        return self.euler_maruyama_step()
+
+    def mu_f(self, t, y, partition, propensity_function, _):
+        propensities = propensity_function(t,y)
+        propensities = propensities * partition.deterministic
+
+        return self.N @ propensities
+
+    def sigma_f(self, t, y, partition, propensity_function, _):
+        propensities = propensity_function(t,y)
+        propensities = propensities * partition.deterministic
+
+        return self.N @ np.sqrt(propensities)
+
+    def euler_maruyama_integrate(self, t_span, y, rng, **kwargs):
+        return em_solve_ivp(self.mu_f, self.sigma_f, t_span, y, rng, **kwargs)
+
+    def solve_ivp_integrate(self, t_span, y, **kwargs):
+        y_gets_expanded = self.simulation_options.approximate_rtot is False
+        # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
+        if y_gets_expanded:
+            y_expanded = np.zeros(len(y)+1)
+            y_expanded[:-1] = y
+        step_solved = solve_ivp(self.dydt, t_span, y_expanded, **kwargs)
+        # drop expanded entry
+        if y_gets_expanded:
+            step_solved.y = step_solved.y[:-1,:]
+
+            y_events = []
+            for event in step_solved.y_events:
+                if event.shape == (0,):
+                    break
+                y_events.append(event[:, :-1])
+            step_solved.y_events = y_events
+        return step_solved
+
     def step(self, t, y, t_end, rng, t_eval, events=None):
         """Integrates the partitioned system forward in time until the upper bound of integration is reached or a stochastic event occurs."""
         if events is None: events = []
@@ -315,10 +357,6 @@ class HybridSimulator(Simulator):
         for e in events:
             assert e.terminal
 
-        # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
-        y_expanded = np.zeros(len(y)+1)
-        y_expanded[:-1] = y
-
         # we can't call solve_ivp with all the t_eval, we need to call it with only those time points
         # that lie between our start and intended upper limit of integration
         if len(t_eval) > 0:
@@ -330,13 +368,17 @@ class HybridSimulator(Simulator):
             relevant_t_eval = None
 
         # integrate until hitting or until t_max
-        step_solved = solve_ivp(self.dydt, t_span, y_expanded, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
+        if FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.deterministic:
+            step_solved = self.solve_ivp_integrate(t_span, y, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
+        else:
+            assert FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.langevin
+            step_solved = self.euler_maruyama_integrate(t_span, y, rng, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
         ivp_step_status = step_solved.status
         t_history = step_solved.t
+
         # if we use t_eval, we will sometimes have no points returned except in events, so we need to dodge that error in indexing
         if len(step_solved.y) > 0:
-            # slice to -1 to drop the integral of the rates, which is slotted into the last entry of y
-            y_history = step_solved.y[:-1,:]
+            y_history = step_solved.y
         else:
             y_history = np.array([])
 
@@ -363,8 +405,6 @@ class HybridSimulator(Simulator):
             assert ivp_step_status == 1
             # ensure that our expectations are met: 1 event of 1 kind, because we insist on terminal events
             t_event, y_event, event_index = canonicalize_event(step_solved.t_events, step_solved.y_events)
-            # drop expanded term for sum of rates
-            y_event = y_event[:-1]
 
             # add event state to our history if its absent
             # (it might be absent if t_eval is set)
@@ -443,6 +483,10 @@ class HybridSimulator(Simulator):
 class HybridNotImplementedError(NotImplementedError):
     """Attempted to use a hybrid algorithm feature that has not been implemented."""
 
+class FastScaleMethods(Enum):
+    deterministic = 'deterministic'
+    langevin = 'langevin'
+
 @dataclass(frozen=True)
 class HybridSimulationOptions():
     """This class defines the configuration of a Haseltine-Rawlings hybrid forward simulation algorithm.
@@ -484,7 +528,12 @@ class HybridSimulationOptions():
     partition_fraction_for_halt: float = None
 
     def __post_init__(self):
-        if not self.fast_scale == 'deterministic': raise HybridNotImplementedError("simulation was configured with fast_scale!='deterministic', but Langevin equations are not implemented.")
+        fast_method = FastScaleMethods(self.fast_scale)
+        if not fast_method == FastScaleMethods.deterministic: raise HybridNotImplementedError("simulation was configured with fast_scale!='deterministic', but Langevin equations are not implemented.")
+
+        if fast_method == FastScaleMethods.langevin.value:
+            assert self.approximate_rtot, 'when integrating using the Euler-Maruyama method, propensities must be approximated as constant within a step'
+
         if self.approximate_rtot:
             assert isinstance(self.contrived_no_reaction_rate, float) and self.contrived_no_reaction_rate > 0, "If approximating stochastic rates as constant in between events, contrived_no_reaction_rate must be a FLOAT greater than 0 to prevent overly large steps."
 
