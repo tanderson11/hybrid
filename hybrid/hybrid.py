@@ -269,45 +269,32 @@ class HybridSimulator(Simulator):
             return product_down_columns * k_of_t
         return jit_calculate_propensities
 
-    #def step(self, t, y, t_end, rng, t_eval, events=None):
-    #    if FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.deterministic:
-    #        return self.ode_step(t, y, t_end, rng, t_eval, events=events)
-    #    else:
-    #        assert FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.langevin
-    #        return self.euler_maruyama_step()
-
-    def mu_f(self, t, y, partition, propensity_function, _):
+    def mu_sigma_f(self, t, y, dt, dW, rng, partition, propensity_function, _):
         propensities = propensity_function(t,y)
         propensities = propensities * partition.deterministic
 
-        return self.N @ propensities
+        mu = self.N @ (propensities)
+        sigma = self.N @ dW(propensities * dt, rng)
 
-    def sigma_f(self, t, y, partition, propensity_function, _):
-        propensities = propensity_function(t,y)
-        propensities = propensities * partition.deterministic
-
-        return self.N @ np.sqrt(propensities)
+        return mu, sigma
 
     def euler_maruyama_integrate(self, t_span, y, rng, **kwargs):
-        return em_solve_ivp(self.mu_f, self.sigma_f, t_span, y, rng, **kwargs)
+        return em_solve_ivp(self.mu_sigma_f, t_span, y, rng, **kwargs)
 
     def solve_ivp_integrate(self, t_span, y, **kwargs):
-        y_gets_expanded = self.simulation_options.approximate_rtot is False
         # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
-        if y_gets_expanded:
-            y_expanded = np.zeros(len(y)+1)
-            y_expanded[:-1] = y
+        y_expanded = np.zeros(len(y)+1)
+        y_expanded[:-1] = y
         step_solved = solve_ivp(self.dydt, t_span, y_expanded, **kwargs)
         # drop expanded entry
-        if y_gets_expanded:
-            step_solved.y = step_solved.y[:-1,:]
+        step_solved.y = step_solved.y[:-1,:]
 
-            y_events = []
-            for event in step_solved.y_events:
-                if event.shape == (0,):
-                    break
-                y_events.append(event[:, :-1])
-            step_solved.y_events = y_events
+        y_events = []
+        for event in step_solved.y_events:
+            if event.shape == (0,):
+                break
+            y_events.append(event[:, :-1])
+        step_solved.y_events = y_events
         return step_solved
 
     def step(self, t, y, t_end, rng, t_eval, events=None):
@@ -529,9 +516,7 @@ class HybridSimulationOptions():
 
     def __post_init__(self):
         fast_method = FastScaleMethods(self.fast_scale)
-        if not fast_method == FastScaleMethods.deterministic: raise HybridNotImplementedError("simulation was configured with fast_scale!='deterministic', but Langevin equations are not implemented.")
-
-        if fast_method == FastScaleMethods.langevin.value:
+        if fast_method == FastScaleMethods.langevin:
             assert self.approximate_rtot, 'when integrating using the Euler-Maruyama method, propensities must be approximated as constant within a step'
 
         if self.approximate_rtot:
