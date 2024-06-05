@@ -150,7 +150,6 @@ class TauLeapSimulator(GillespieSimulator):
         # bound the change in each propensity *due to explicit time dependence* to one part in epsilon/2
         tau_prime = self.inhomogeneous_time_proposal(t, y, self.epsilon/2, propensities[reaction_mask], reaction_mask, min(t_end-t, tau))
 
-        print(tau, tau_prime, self.rejection_multiple/np.sum(propensities))
         return min(tau, tau_prime)
 
     def inhomogeneous_time_proposal(self, t, y, epsilon, propensities, reaction_mask, tau_max):
