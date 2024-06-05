@@ -93,6 +93,8 @@ class Run():
 
         # for t and y history, we add all the data contained in the step object
         n_samples = len(step.t_history)
+        if self.history_index+n_samples+1 > len(self.t_history):
+            raise ValueError("exceeded history length")
         self.t_history[self.history_index+1:self.history_index+n_samples+1] = step.t_history
         self.y_history[:, self.history_index+1:self.history_index+n_samples+1] = step.y_history
         self.history_index += n_samples

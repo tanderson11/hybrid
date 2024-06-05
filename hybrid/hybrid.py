@@ -12,6 +12,7 @@ import numba
 
 from .simulator import Simulator, StepStatus
 from .eulermaruyama import em_solve_ivp
+import hybrid.util as util
 
 class HybridStepStatus(StepStatus):
     failure = -1
@@ -269,17 +270,8 @@ class HybridSimulator(Simulator):
             return product_down_columns * k_of_t
         return jit_calculate_propensities
 
-    def mu_sigma_f(self, t, y, dt, dW, rng, partition, propensity_function, _):
-        propensities = propensity_function(t,y)
-        propensities = propensities * partition.deterministic
-
-        mu = self.N @ (propensities)
-        sigma = self.N @ dW(propensities * dt, rng)
-
-        return mu, sigma
-
-    def euler_maruyama_integrate(self, t_span, y, rng, **kwargs):
-        return em_solve_ivp(self.mu_sigma_f, t_span, y, rng, **kwargs)
+    def euler_maruyama_integrate(self, t_span, y, partition, rng, **kwargs):
+        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.rounding_method)
 
     def solve_ivp_integrate(self, t_span, y, **kwargs):
         # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
@@ -359,7 +351,7 @@ class HybridSimulator(Simulator):
             step_solved = self.solve_ivp_integrate(t_span, y, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
         else:
             assert FastScaleMethods(self.simulation_options.fast_scale) == FastScaleMethods.langevin
-            step_solved = self.euler_maruyama_integrate(t_span, y, rng, events=events, args=(partition, self.propensity_function, hitting_point), t_eval=relevant_t_eval)
+            step_solved = self.euler_maruyama_integrate(t_span, y, partition, rng, events=events, t_eval=relevant_t_eval)
         ivp_step_status = step_solved.status
         t_history = step_solved.t
 
@@ -417,7 +409,7 @@ class HybridSimulator(Simulator):
             print(f"Stopping for partition change. t={t_event}")
 
         # round the species quantities at our final time point
-        y_history[:, -1] = round_with_method(y_history[:, -1], self.simulation_options.round_randomly, rng)
+        y_history[:, -1] = util.round_with_method(y_history[:, -1], self.simulation_options.rounding_method, rng)
 
         # if we reached the true upper limit of integration simply return the current values of t and y
         if status == self.status_klass.t_end:
@@ -495,10 +487,11 @@ class HybridSimulationOptions():
         fast_scale (str, optional):
             if 'deterministic', approximate the fast reactions as differential equations.
             If 'langevin', treat the fast reactions as Langevin equations. Defaults to 'deterministic'.
-        round_randomly (bool, optional):
-            if True, round species quantities randomly in proportion to decimal
-            (so 1.8 copies of X becomes 2 with 80% probability). If False, round conventionally.
-            Defaults to True.
+        rounding_method (str, optional):
+            if 'randomly', round species quantities randomly in proportion to decimal
+            (so 1.8 copies of X becomes 2 with 80% probability), if 'conventionally, round conventionally,
+            if 'no_rounding', do not round species quantities (this is not recommended).
+            Defaults to 'randomly'.
         halt_on_partition_change (bool, optional):
             if True, stop integration when the change in state causes a deterministic
             reaction to enter the stochastic regime. If False, don't. When  Defaults to True.
@@ -506,15 +499,22 @@ class HybridSimulationOptions():
             float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
             This avoids numerical instability around the threshold. Defaults to None.
+        euler_maruyama_timestep (float, optional):
+            finite timestep to use for integration of the Chemical Langevin equations.
+            relevant only if fast_scale is set to 'langevin.' Defaults to 0.001.
     """
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
     fast_scale: str = 'deterministic'
-    round_randomly: bool = True
+    rounding_method: str = 'randomly'
     halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = None
+    euler_maruyama_timestep: float = 0.001
 
     def __post_init__(self):
+        rounding_method = util.RoundingMethod(self.rounding_method)
+        if rounding_method == util.RoundingMethod.no_rounding:
+            print("WARNING: rounding is turned off. This may cause undesireable behavior with consistent windfalls or shortfalls. Is this a test?")
         fast_method = FastScaleMethods(self.fast_scale)
         if fast_method == FastScaleMethods.langevin:
             assert self.approximate_rtot, 'when integrating using the Euler-Maruyama method, propensities must be approximated as constant within a step'
@@ -543,13 +543,3 @@ def canonicalize_event(t_events, y_events):
     y_event = y_events[event_index][0]
 
     return t_event, y_event, event_index
-
-def round_with_method(y, round_randomly=False, rng=None):
-    """Round the state vector `y` either conventionally or randomly."""
-    if round_randomly:
-        # round up if random float is less than decimal (small decimal ==> rarely round up)
-        # round down otherwise
-        rounded = (rng.random(y.shape) <= (y - np.floor(y))) + np.floor(y)
-        return rounded
-    else:
-        return np.round(y)
