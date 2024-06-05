@@ -75,7 +75,7 @@ and
 \text{A} + \text{C} \to \text{D}
 ```
 
-where both reactions proceed with a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and it is best treated stochastically. Therefore, we need to employ a hybrid simulation technique:
+where both reactions proceed with a rate constant $k = 10^{-7}$ but the initial quantity of $\text{A}$ is large: $10^{6}$ whereas the initial quantity of $\text{C}$ is small: $10$. In this case, the second reaction proceeds very slowly compared to the first, and may be better treated stochastically, but the first reaction proceeds very quickly compared to the second and would be prohibitively time-consuming to simulate as with Gillespie's Stochastic Simulation Algorithm (SSA). In that case, we need to employ a hybrid simulation technique:
 
 ```python
 import numpy as np
@@ -90,7 +90,7 @@ N = np.array([ # A, B, C, D
     [-1, 0, -1, 1],
 ]).T
 
-# and V transpose
+# and V transpose for the same reason
 kinetic_orders = np.array([
     [2, 0, 0, 0],
     [1, 0, 1, 0]
