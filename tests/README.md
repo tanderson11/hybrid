@@ -75,7 +75,7 @@ We implement a reversible isomerization system and check that $n_{\text{tot}}$ d
 In a partitioned system, forward simulation may eventually "break" the partition (cause a rate or population to cross the critical threshold). If the partition is not redrawn after it breaks, then continued forward simulation will no longer be a valid approximation of the system's dynamics. Consider, for example, the death process unfolding with first-order rate constant $k$
 
 ```math
-\text{X} \leftrightarrow \emptyset
+\text{X} \to \emptyset
 ```
 
 initialized with large $x_0$. A natural question to ask of the death process is: what is the distribution of times until extinction? A partitioning approach will begin by treating the death of $\text{X}$ as a "fast" process, potentially using differential equations. As $\text{X}$ exponentially decays, it will eventually cross a critical threshold below which its behavior should be treated as a "slow" process using the SSA. If the algorithm fails to notice $\text{X}$ crossing the threshold, then the decline of $\text{X}$ will be treated deterministically forever and the time to extinction for $\text{X}$ will have zero variance.
@@ -86,8 +86,16 @@ We implement a death process that begins with an abundant population and check t
 
 # Citations
 
+SBML
+1. Hucka, M., A. Finney, H. M. Sauro, H. Bolouri, J. C. Doyle, H. Kitano, A. P. Arkin, et al. 2003. “The Systems Biology Markup Language (SBML): A Medium for Representation and Exchange of Biochemical Network Models.” Bioinformatics 19 (4): 524–31. https://doi.org/10.1093/bioinformatics/btg015.
+2. Evans, Thomas W., Colin S. Gillespie, and Darren J. Wilkinson. 2008. “The SBML Discrete Stochastic Models Test Suite.” Bioinformatics 24 (2): 285–86. https://doi.org/10.1093/bioinformatics/btm566.
+
 Shortfall problem
 1. Vasudeva, Karan, and Upinder S. Bhalla. 2004. “Adaptive Stochastic-Deterministic Chemical Kinetic Simulations.” Bioinformatics 20 (1): 78–84. https://doi.org/10.1093/bioinformatics/btg376.
-2. Rathinam, Muruhan, Linda R. Petzold, Yang Cao, and Daniel T. Gillespie. 2003. “Stiffness in Stochastic Chemically Reacting Systems: The Implicit Tau-Leaping Method.” The Journal of Chemical Physics 119 (24): 12784–94. https://doi.org/10.1063/1.1627296.
-3. Haseltine, Eric L., and James B. Rawlings. 2002. “Approximate Simulation of Coupled Fast and Slow Reactions for Stochastic Chemical Kinetics.” The Journal of Chemical Physics 117 (15): 6959–69. https://doi.org/10.1063/1.1505860.
+
+Stoichiometrically realizable rounding
+1. Rathinam, Muruhan, Linda R. Petzold, Yang Cao, and Daniel T. Gillespie. 2003. “Stiffness in Stochastic Chemically Reacting Systems: The Implicit Tau-Leaping Method.” The Journal of Chemical Physics 119 (24): 12784–94. https://doi.org/10.1063/1.1627296.
+
+Contrived rate of no reaction
+1. Haseltine, Eric L., and James B. Rawlings. 2002. “Approximate Simulation of Coupled Fast and Slow Reactions for Stochastic Chemical Kinetics.” The Journal of Chemical Physics 117 (15): 6959–69. https://doi.org/10.1063/1.1505860.
 
