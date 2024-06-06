@@ -1,7 +1,7 @@
 version: '1.0'
 options:
   approximate_rtot: false
-  contrived_no_reaction_rate: 10.0
+  contrived_no_reaction_rate: 20.0
   fast_scale: deterministic
   round: 'randomly'
   halt_on_partition_change: false
@@ -9,5 +9,5 @@ options:
 partition_function:
   threshold: 100.0
   partition_function_type: NThresholdPartitioner
-description: 'Species partitioning n=100; no halting; contrived rate=10.0'
+description: 'Species partitioning n=100; no halting; contrived rate=20.0'
 simulator: haseltinerawlings
