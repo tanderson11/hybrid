@@ -55,7 +55,7 @@ class SimulatorFactory(ConfigParser):
     def load(cls, file, format='yaml'):
         d = cls.load_dictionary(file, format=format)
         return cls.from_dict(d)
-        
+
     def save(self, file, format='yaml'):
         if format=='yaml':
             with open(file, 'w') as f:
@@ -114,10 +114,10 @@ class HybridSimulatorFactory(SimulatorFactory):
     def handle_field(cls, key, value):
         if key != 'partition_function':
             return super().handle_field(key, value)
-        
+
         scheme_type = value.pop('partition_function_type')
         return key, SCHEMES_BY_NAME[scheme_type](**value)
-    
+
     def tune_dictionary(self, selfdictionary):
         selfdictionary['partition_function']['partition_function_type'] = type(self.partition_function).__name__
         return super().tune_dictionary(selfdictionary)
@@ -128,14 +128,33 @@ FACTORIES = {
     'tau': TauLeapSimulatorFactory,
 }
 
-def load_simulator_factory(file, format='yaml'):
+# Citation: pydantic https://github.com/pydantic/pydantic/blob/fd2991fe6a73819b48c906e3c3274e8e47d0f761/LICENSE
+def deep_update(mapping, *updating_mappings):
+    updated_mapping = mapping.copy()
+    for updating_mapping in updating_mappings:
+        for k, v in updating_mapping.items():
+            if k in updated_mapping and isinstance(updated_mapping[k], dict) and isinstance(v, dict):
+                updated_mapping[k] = deep_update(updated_mapping[k], v)
+            else:
+                updated_mapping[k] = v
+    return updated_mapping
+
+def load_simulator_factory(file, format='yaml', overrides=None):
     d = SimulatorFactory.load_dictionary(file, format=format)
+    if overrides:
+        # deep_update({'options': {'a':'b'}}, {'options': {'c': 'd'}})
+        # --> {'options': {'a':'b', 'c':'d'}}
+        # instead of
+        # --> {'options': {'c':'d'}}
+        d = deep_update(d, overrides)
     factory_klass = FACTORIES[d['simulator']]
     return factory_klass.from_dict(d)
 
 @dataclass
 class SimulatorFactoryPathParser(ConfigParser):
-    """Parses a simulator config that points to one of a subset of pre-defined simulators."""
+    """Parses a simulator config that points to one of a subset of pre-defined simulators.
+
+    Applies optional overrides."""
     path: str
     format: str = 'yaml'
 
@@ -150,12 +169,13 @@ class PreconfiguredSimulatorLoader(ConfigParser):
     format = 'yaml'
 
     name: str
+    overrides: dict = None
 
     @classmethod
     def from_dict(cls, config_dictionary):
         parser = cls(**config_dictionary)
-        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{parser.name}.{cls.format}'), format=cls.format)
+        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{parser.name}.{cls.format}'), format=cls.format, overrides=parser.overrides)
 
     @classmethod
-    def load_preconfigured(cls, name):
-        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{name}.{cls.format}'), format=cls.format)
+    def load_preconfigured(cls, name, overrides=None):
+        return load_simulator_factory(os.path.join(cls.preconfigured_root, f'{name}.{cls.format}'), format=cls.format, overrides=overrides)
