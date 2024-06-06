@@ -278,8 +278,10 @@ class HybridSimulator(Simulator):
         y_expanded = np.zeros(len(y)+1)
         y_expanded[:-1] = y
         step_solved = solve_ivp(self.dydt, t_span, y_expanded, **kwargs)
-        # drop expanded entry
-        step_solved.y = step_solved.y[:-1,:]
+        # drop expanded entry (but instead of an array we will have an empty list if a terminal event happened)
+        # this if statement prevents an error
+        if len(step_solved.y) != 0:
+            step_solved.y = step_solved.y[:-1,:]
 
         y_events = []
         for event in step_solved.y_events:
