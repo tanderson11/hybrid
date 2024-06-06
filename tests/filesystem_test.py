@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import pathlib
+import time
 
 class FilesystemTestMeta(type):
     test_collection = None
@@ -44,13 +45,22 @@ class TestSpec(unittest.TestCase):
         k = self.specification.model.get_k(reaction_to_k=self.reaction_to_k, parameters=self.specification.parameters, jit=True)
         simulator = factory.make_simulator(k, self.specification.model.stoichiometry(), self.specification.model.kinetic_order(), species_labels=self.specification.model.legend())
 
+        start = time.time()
         processed_results = simulator.run_simulations(self.n, self.specification.t.t_span, initial_condition, rng=rng, t_eval=self.specification.t.t_eval, end_routine=end_routine)
+        end = time.time()
+        self.elapsed_time = end-start
 
         return processed_results
 
+    def tearDown(self):
+        self.out = os.path.join(self.test_out, self.test_name)
+        pathlib.Path(self.out).mkdir(parents=True, exist_ok=True)
+        with open(os.path.join(self.out, 'time.txt'), 'w') as f:
+            f.write(str(self.elapsed_time))
+
 class TEvalTest(TestSpec):
     t_eval = None
-    
+
     def apply_overrides(self, specification):
         specification = super().apply_overrides(specification)
         specification.t.t_eval = self.t_eval
@@ -74,10 +84,9 @@ class TrajectoryTest(TEvalTest):
         self.df = df
 
     def tearDown(self):
+        super().tearDown()
         # save results
-        out = os.path.join(self.test_out, self.test_name)
-        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
-        self.df.to_csv(os.path.join(out, f'n={self.n}_simulation_results.csv'))
+        self.df.to_csv(os.path.join(self.out, f'n={self.n}_simulation_results.csv'))
 
 class MeanTest(TrajectoryTest):
     def consolidate_data(self, dfs):
@@ -112,7 +121,6 @@ class EndpointTest(TestSpec):
         self.df = df
 
     def tearDown(self):
+        super().tearDown()
         # save results
-        out = os.path.join(self.test_out, self.test_name)
-        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
-        self.df.to_csv(os.path.join(out, f'n={self.n}_tend_results.csv'))
+        self.df.to_csv(os.path.join(self.out, f'n={self.n}_tend_results.csv'))
