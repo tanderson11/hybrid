@@ -511,7 +511,7 @@ class HybridSimulationOptions():
     round: str = 'randomly'
     halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = None
-    euler_maruyama_timestep: float = 0.001
+    euler_maruyama_timestep: float = 0.01
 
     def __post_init__(self):
         round = util.RoundingMethod(self.round)
