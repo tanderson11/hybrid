@@ -184,8 +184,8 @@ class Simulator(ABC):
         self.species_labels = np.array(species_labels)
         self.pathway_labels = np.array(pathway_labels)
 
-    def initiate_run(self, t0, y0):
-        return self.run_klass(t0, y0)
+    def initiate_run(self, t0, y0, history_length=1e6):
+        return self.run_klass(t0, y0, history_length=history_length)
 
     def run_simulations(self, n_trials: int, t_span: ArrayLike, y0: ArrayLike, rng: List[np.random.Generator], end_routine: Callable=None, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs):
         """Simulate the reaction manifold many times.
@@ -224,7 +224,7 @@ class Simulator(ABC):
 
         return artifacts
 
-    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, **step_kwargs) -> History:
+    def simulate(self, t_span: ArrayLike, y0: ArrayLike, rng: np.random.Generator, t_eval: ArrayLike=None, halt: Callable=None, history_length=1e6, **step_kwargs) -> History:
         """Simulate the reaction manifold between two time points given a starting state.
 
         Parameters
@@ -260,7 +260,7 @@ class Simulator(ABC):
 
         if t_eval is None: t_eval = np.array([])
 
-        run = self.initiate_run(t0, y0)
+        run = self.initiate_run(t0, y0, history_length=history_length)
 
         t = t0
         while t < t_end:

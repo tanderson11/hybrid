@@ -1,6 +1,5 @@
 import unittest
 import numpy as np
-import matplotlib.pyplot as plt
 import hybrid.hybrid as hybrid
 
 class PartitionBreakTests(unittest.TestCase):
@@ -39,7 +38,7 @@ class PartitionBreakTests(unittest.TestCase):
         # go below the stochastic threshold
         t_span = np.array([0.0, -1 * np.log(threshold * 0.7/y0[0]) / (k[0] - k[1])])
         print(t_span)
-        N = np.array([[-1.0, 1.0]]) # first order exponential decay
+        N = np.array([[-1.0, 1.0]])
         kinetic_order_matrix = np.array([[1.0, 1.0]])
         rng = np.random.default_rng()
 

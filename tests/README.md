@@ -36,11 +36,11 @@ Hybrid stochastic simulation is a territory full of land mines: subtle implement
 
 *[Applies to algorithms with deterministic non-integer updates (ODE partitioning algorithms).]*
 
-If we use an approximating scheme that allows real number updates to populations, then we will also need to round those populations periodically (typically after every update but at the very least whenever a population becomes small and representing it as a real number becomes un-physical). As noted by Vasudeva and Bhalla in their survey of hybrid algorithms (2004), conventional rounding can produce biased outcomes if there is a consistent shortfall/windfall in a population's derivative. For example, suppose we have a system with one population, `x`, where
+If we use an approximating scheme that allows real number updates to populations, then we will also need to round those populations periodically (typically after every update but at the very least whenever a population becomes small and representing it as a real number becomes un-physical). As noted by Vasudeva and Bhalla in their survey of hybrid algorithms (2004), conventional rounding can produce biased outcomes if there is a consistent shortfall/windfall in a population's derivative. For example, suppose we have a system with one population, $x$, where
 
 0. $x$ is initialized at $x_0$ copies
-1. $x$ is updated and rounded at intervals of $0.1 \text{seconds}$
-2. $dx/dt$ is $4 \text{copies} / {second}$.
+1. $x$ is updated and rounded at intervals of $0.1$ seconds
+2. $dx/dt$ is $4$ copies / second.
 
 In such a system, every $0.1 \text{seconds}$ $x$ is updated $x = x_0 + dx/dt \cdot 0.1 = x_0 + 0.4$ but then rounded to $\text{round}(x_0 + 0.4) = x_0$. Due to the persistent "shortfall" of $x$, its value never changes despite its positive derivative. In partitioning algorithms, this behavior sometimes manifests as a species whose population "clings" to a critical threshold where a relevant reaction switches between the fast and the slow sets.
 
@@ -50,7 +50,7 @@ We implement a test case that is likely to produce undesirable threshold clingin
 
 ### Unrealizable rounding
 
-*[Applies to algorithms with stochastic non-integer updates (CLE partitioning algorithms, implicit tau-leaping)]*
+*[Applies to algorithms with stochastic non-integer updates (CLE partitioning algorithms, implicit tau-leaping).]*
 
 When species quantities are rounded, care needs to be take that the rounding does not move the system to a stoichiometrically unreachable state.
 
