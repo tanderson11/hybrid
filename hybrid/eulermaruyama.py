@@ -63,29 +63,30 @@ def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None
     t_history = np.array(t_history)
     y_history = np.array(y_history).T
 
-    y_interp = scipy.interpolate.interp1d(t_history, y_history)(t_eval)
+    if t_eval is not None:
+        y_interp = scipy.interpolate.interp1d(t_history, y_history)(t_eval)
 
-    if t_end not in t_eval:
-        _y_history = np.zeros(shape=(y_interp.shape[0], y_interp.shape[1]+1))
-        _y_history[:,:-1] = y_interp
-        _y_history[:,-1] = y_history[:,-1]
+        if t_end not in t_eval:
+            _y_history = np.zeros(shape=(y_interp.shape[0], y_interp.shape[1]+1))
+            _y_history[:,:-1] = y_interp
+            _y_history[:,-1] = y_history[:,-1]
 
-        y_history = _y_history
+            y_history = _y_history
 
-        _t_history = np.zeros(shape=len(t_eval)+1)
-        _t_history[:-1] = t_eval
-        _t_history[-1] = t_history[-1]
+            _t_history = np.zeros(shape=len(t_eval)+1)
+            _t_history[:-1] = t_eval
+            _t_history[-1] = t_history[-1]
 
-        t_history = _t_history
-    else:
-        t_history = t_eval
-        y_history = y_interp
+            t_history = _t_history
+        else:
+            t_history = t_eval
+            y_history = y_interp
 
     # round to stoichiometrically realizable change:
     # this prevents pathways in equilibrium from randomly walking (due to random rounding)
     # (recall: random rounding is necessary to prevent consistent windfalls/shortfalls in small time steps from biasing simulator)
     if round:
-        y_history[-1] = y0 + N @ (util.round_with_method(total_firings, rounding_method, rng))
+        y_history[:, -1] = y0 + N @ (util.round_with_method(total_firings, rounding_method, rng))
 
     result = EMResult(
         t_history,

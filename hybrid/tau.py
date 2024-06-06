@@ -36,7 +36,7 @@ class TauStepStatus(StepStatus):
     stochastic = auto()
 
 class TauRun(Run):
-    def __init__(self, t0, y0, steps_on_rejection, history_length=1000000) -> None:
+    def __init__(self, t0, y0, steps_on_rejection, history_length=1e6) -> None:
         super().__init__(t0, y0, history_length)
         self.steps_on_rejection = steps_on_rejection
         self.forced_gillespie_steps = 0
@@ -92,8 +92,8 @@ class TauLeapSimulator(GillespieSimulator):
         if self.inhomogeneous and self.time_handling != TimeHandling.inhomogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation, but simulator hasn't been told to use inhomogeneous leaping. Is this a test?")
 
-    def initiate_run(self, t0, y0):
-        return self.run_klass(t0, y0, self.gillespie_steps_on_rejection)
+    def initiate_run(self, t0, y0, history_length=1e6):
+        return self.run_klass(t0, y0, self.gillespie_steps_on_rejection, history_length=history_length)
 
     def find_L(self, y, reactants_only=True):
         # the maximum permitted firings of each reaction before reducing a population below 0

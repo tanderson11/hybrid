@@ -3,7 +3,7 @@ options:
   approximate_rtot: false
   contrived_no_reaction_rate: null
   fast_scale: deterministic
-  round_randomly: true
+  round: randomly
   halt_on_partition_change: true
   partition_fraction_for_halt: 0.9
 partition_function:

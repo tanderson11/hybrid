@@ -271,7 +271,7 @@ class HybridSimulator(Simulator):
         return jit_calculate_propensities
 
     def euler_maruyama_integrate(self, t_span, y, partition, rng, **kwargs):
-        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.rounding_method)
+        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.round)
 
     def solve_ivp_integrate(self, t_span, y, **kwargs):
         # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
@@ -409,7 +409,7 @@ class HybridSimulator(Simulator):
             print(f"Stopping for partition change. t={t_event}")
 
         # round the species quantities at our final time point
-        y_history[:, -1] = util.round_with_method(y_history[:, -1], self.simulation_options.rounding_method, rng)
+        y_history[:, -1] = util.round_with_method(y_history[:, -1], self.simulation_options.round, rng)
 
         # if we reached the true upper limit of integration simply return the current values of t and y
         if status == self.status_klass.t_end:
@@ -487,7 +487,7 @@ class HybridSimulationOptions():
         fast_scale (str, optional):
             if 'deterministic', approximate the fast reactions as differential equations.
             If 'langevin', treat the fast reactions as Langevin equations. Defaults to 'deterministic'.
-        rounding_method (str, optional):
+        round (str, optional):
             if 'randomly', round species quantities randomly in proportion to decimal
             (so 1.8 copies of X becomes 2 with 80% probability), if 'conventionally, round conventionally,
             if 'no_rounding', do not round species quantities (this is not recommended).
@@ -506,14 +506,14 @@ class HybridSimulationOptions():
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
     fast_scale: str = 'deterministic'
-    rounding_method: str = 'randomly'
+    round: str = 'randomly'
     halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = None
     euler_maruyama_timestep: float = 0.001
 
     def __post_init__(self):
-        rounding_method = util.RoundingMethod(self.rounding_method)
-        if rounding_method == util.RoundingMethod.no_rounding:
+        round = util.RoundingMethod(self.round)
+        if round == util.RoundingMethod.no_rounding:
             print("WARNING: rounding is turned off. This may cause undesireable behavior with consistent windfalls or shortfalls. Is this a test?")
         fast_method = FastScaleMethods(self.fast_scale)
         if fast_method == FastScaleMethods.langevin:
