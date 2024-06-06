@@ -1,0 +1,6 @@
+# citation: Gillespie 2008
+
+parameters:
+  c1: 1.0
+  c2: 2.0
+  c3: '5e-2'
