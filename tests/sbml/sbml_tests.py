@@ -32,6 +32,7 @@ class ZScoreTest(MeanTest):
         return end_routine
 
     def tearDown(self):
+        super().tearDown()
         # save results
         results_table = self.test_result.results_df
         z_ts = self.test_result.z_scores_for_mean_by_species

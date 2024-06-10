@@ -82,6 +82,7 @@ class BirthDeathTest(unittest.TestCase):
         self.bd_test(*self.two_species_configuration, y0, self.approximate_options)
 
     def tearDown(self):
+        super().tearDown()
         with open(f"{self.id().split('.')[2]}.txt", 'w') as f:
             f.write(f"Analytic extinction probability={self.analytic_extinction_p} Extinctions={self.extinctions}/{self.n}. 95% confidence=({self.ci_lower, self.ci_upper})")
 
