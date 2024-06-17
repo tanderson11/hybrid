@@ -97,7 +97,7 @@ class GillespieSimulator(Simulator):
         return hitting_time
 
     @staticmethod
-    def gillespie_update_proposal(N, propensities, rng):
+    def _pick_gillespie_pathway(propensities, rng):
         cumsum = propensities.cumsum()
         selections = cumsum / cumsum[-1]
         pathway_rand = rng.random()
@@ -105,10 +105,26 @@ class GillespieSimulator(Simulator):
         path_index = np.unravel_index(entry, selections.shape)
         assert len(path_index) == 1
         pathway = path_index[0]
+
+        return pathway
+
+    @staticmethod
+    def _gillespie_update(N, pathway):
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
-        update = np.transpose(N[:,path_index])
+        update = np.transpose(N[:,pathway])
         update = update.reshape((N.shape[0],))
+        return update
+
+    @classmethod
+    def gillespie_update_proposal(cls, N, Nplus, Nminus, propensities, rng, poisson_product_mask=None):
+        pathway = cls._pick_gillespie_pathway(propensities, rng)
+        update = cls._gillespie_update(N, pathway)
+        if poisson_product_mask is not None and poisson_product_mask[pathway]:
+            positive_update = cls._gillespie_update(Nplus, pathway)
+            negative_update = cls._gillespie_update(Nminus, pathway)
+            update = rng.poisson(positive_update) + negative_update
+
         return pathway, update
 
     @staticmethod
@@ -144,7 +160,7 @@ class GillespieSimulator(Simulator):
 
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
-        pathway, update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng)
+        pathway, update = self.gillespie_update_proposal(self.N, self.Nplus, self.Nminus, endpoint_propensities, rng, self.poisson_product_mask)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, self.status_klass.stochastic, pathway=pathway)
@@ -159,7 +175,7 @@ class GillespieSimulator(Simulator):
             update = np.zeros_like(y)
             return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), self.status_klass.t_end)
 
-        pathway, update = self.gillespie_update_proposal(self.N, propensities, rng)
+        pathway, update = self.gillespie_update_proposal(self.N, self.Nplus, self.Nminus, propensities, rng, self.poisson_product_mask)
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, self.status_klass.stochastic, pathway)

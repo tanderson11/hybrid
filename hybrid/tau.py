@@ -69,8 +69,8 @@ class TauLeapOptions():
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
     status_klass = TauStepStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, discontinuities=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
-        super().__init__(k, N, kinetic_order_matrix, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
+        super().__init__(k, N, kinetic_order_matrix, poisson_product_mask=poisson_product_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         self.N2 = self.N**2
         simulator_options = TauLeapOptions(**option_kwargs)
 
@@ -335,33 +335,11 @@ class TauLeapSimulator(GillespieSimulator):
         return min(tau1, tau2)
 
     @staticmethod
-    def explicit_tau_update_proposal(N, tau, propensities, rng, return_firings=False):
-        reaction_firings = rng.poisson(tau * propensities)
-        update = np.sum(reaction_firings * N, axis=1)
-        if return_firings:
-            return update, reaction_firings
-        return update
-
-    def tau_update_proposal_avoiding_negatives(self, N, y, t, tau, propensities, rng, method=Method.explicit, propensity_calculator=None):
-        bad_update_flag = True
-        while bad_update_flag:
-            if method == Method.explicit:
-                update = self.explicit_tau_update_proposal(N, tau, propensities, rng)
-            else:
-                assert method == Method.implicit
-                update = self.implicit_tau_update_proposal(N, y, t, tau, propensities, rng, propensity_calculator)
-
-            if not ((y + update) < 0).any():
-                bad_update_flag = False
-            else:
-                # if we get 'exceedingly unlucky' and a species became extinct due to the tau leap
-                # (recall that Poisson has non zero probability density for all positive integers)
-                # then try again with half the time.
-                tau = tau/2
-        return tau, update
+    def explicit_tau_reaction_firings(tau, propensities, rng):
+        return rng.poisson(tau * propensities)
 
     @classmethod
-    def implicit_tau_update_proposal(cls, N, y, t, tau, propensities, rng, propensity_calculator, return_firings=False):
+    def implicit_tau_reaction_firings(cls, N, y, t, tau, propensities, rng, propensity_calculator):
         # Sandmann 2009 summarizing Rathinam 2003
 
         # number of firings from the explicit method
@@ -383,10 +361,56 @@ class TauLeapSimulator(GillespieSimulator):
         # after calculating y_end, we will slightly adjust it to get a stoichiometrically realizable, integer-valued vector
         k_j = calculate_k_j(y_end_propensities)
         k_j = np.round(k_j)
-        update = N @ k_j
+
+        return k_j
+
+    @classmethod
+    def _update_from_firings(cls, N, Nplus, Nminus, firings, rng, poisson_product_mask=None):
+        if poisson_product_mask is None:
+            return N @ firings
+        product_update_base = Nplus*firings
+
+        # for each reaction with random products, draw the random number of products created
+        # taking advantage of the fact that the sum of poisson is poisson of the sum
+        product_update_base[:, poisson_product_mask] = rng.poisson(product_update_base[:,poisson_product_mask])
+
+        update = product_update_base.sum(axis=1)
+        update += Nminus @ firings
+        return update
+
+    @classmethod
+    def implicit_tau_update_proposal(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, return_firings=False, poisson_product_mask=None):
+        k_j = cls.implicit_tau_reaction_firings(N, y, t, tau, propensities, rng, propensity_calculator)
+        update = cls._update_from_firings(N, k_j, poisson_product_mask)
         if return_firings:
             return update, k_j
         return update
+
+    @classmethod
+    def explicit_tau_update_proposal(cls, N, Nplus, Nminus, tau, propensities, rng, return_firings=False, poisson_product_mask=None):
+        reaction_firings = cls.explicit_tau_reaction_firings(tau, propensities, rng)
+        update = cls._update_from_firings(N, Nplus, Nminus, reaction_firings, poisson_product_mask)
+        if return_firings:
+            return update, reaction_firings
+        return update
+
+    def tau_update_proposal_avoiding_negatives(self, N, Nplus, Nminus, y, t, tau, propensities, rng, poisson_product_mask=None, method=Method.explicit, propensity_calculator=None):
+        bad_update_flag = True
+        while bad_update_flag:
+            if method == Method.explicit:
+                update = self.explicit_tau_update_proposal(N, Nplus, Nminus, tau, propensities, rng, poisson_product_mask=poisson_product_mask)
+            else:
+                assert method == Method.implicit
+                update = self.implicit_tau_update_proposal(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, poisson_product_mask=poisson_product_mask)
+
+            if not ((y + update) < 0).any():
+                bad_update_flag = False
+            else:
+                # if we get 'exceedingly unlucky' and a species became extinct due to the tau leap
+                # (recall that Poisson has non zero probability density for all positive integers)
+                # then try again with half the time.
+                tau = tau/2
+        return tau, update
 
     def tau_step(self, t, y, t_end, rng, t_eval):
         # a tracker variable if a Gillespie step is made, initialize as None
@@ -397,6 +421,9 @@ class TauLeapSimulator(GillespieSimulator):
 
         critical_reactions = self.find_critical_reactions(y)
         critical_sum = np.sum(propensities[critical_reactions])
+
+        poisson_product_mask = None if self.poisson_product_mask is None else self.poisson_product_mask[~critical_reactions]
+
 
         # if all reactions are critical, we won't tau leap, we'll just do gillespie
         if (critical_reactions).all():
@@ -431,7 +458,8 @@ class TauLeapSimulator(GillespieSimulator):
                 def propensity_calculator(t, y):
                     propensities = self.propensity_function(t, y)
                     return propensities[~critical_reactions]
-            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, method=self.method, propensity_calculator=propensity_calculator)
+
+            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], self.Nplus[:, ~critical_reactions], self.Nminus[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, poisson_product_mask=poisson_product_mask, method=self.method, propensity_calculator=propensity_calculator)
 
             if t+tau_prime == t_end:
                 status = self.status_klass.t_end
@@ -442,7 +470,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau = tau_prime_prime
             #print(tau)
             #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
-            pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng)
+            pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], self.Nplus[:, critical_reactions], self.Nminus[:, critical_reactions], propensities[critical_reactions], rng, poisson_product_mask=poisson_product_mask)
             tau_update = self.explicit_tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
 

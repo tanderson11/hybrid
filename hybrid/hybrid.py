@@ -104,7 +104,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
 class HybridSimulator(Simulator):
     status_klass = HybridStepStatus
-    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
+    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -148,7 +148,7 @@ class HybridSimulator(Simulator):
         """
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
-        super().__init__(k, N, kinetic_order_matrix, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+        super().__init__(k, N, kinetic_order_matrix, poisson_product_mask=poisson_product_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         if isinstance(partition_function, PartitionScheme):
             partition_function = partition_function.partition_function
         self.partition_function = partition_function
@@ -452,14 +452,23 @@ class HybridSimulator(Simulator):
         if self.simulation_options.contrived_no_reaction_rate is not None and np.squeeze(path_index) == len(valid_selections)-1:
             return Step(t_history, y_history, self.status_klass.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
 
-        # N_ij = net change in i after unit progress in reaction j
-        # so the appropriate column of the stoich matrix tells us how to do our update
-        update = np.transpose(self.N[:,path_index])
-        update = update.reshape(y.shape)
+        update = self._get_update(self.N, self.Nplus, self.Nminus, path_index, y.shape, rng, poisson_product_mask=self.poisson_product_mask)
         y_history[:, -1] += update
 
         assert len(path_index)==1
         return Step(t_history, y_history, status, step_solved.nfev, pathway=path_index[0])
+
+    @staticmethod
+    def _get_update(N, Nplus, Nminus, pathway, shape, rng, poisson_product_mask=None):
+        # N_ij = net change in i after unit progress in reaction j
+        # so the appropriate column of the stoich matrix tells us how to do our update
+        if poisson_product_mask is None:
+            update = np.transpose(N[:,pathway])
+        else:
+            update = rng.poisson(np.transpose(N[:,pathway]))
+
+        update = update.reshape(shape)
+        return update
 
 class HybridNotImplementedError(NotImplementedError):
     """Attempted to use a hybrid algorithm feature that has not been implemented."""

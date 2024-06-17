@@ -137,7 +137,7 @@ class Step(NamedTuple):
 class Simulator(ABC):
     run_klass = Run
     status_klass = DummyStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -148,6 +148,12 @@ class Simulator(ABC):
             The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
         kinetic_order_matrix : ArrayLike
             The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
+        poisson_product_mask : ArrayLike, optional
+            A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
+            from a Poisson distribution with mean given by the corresponding element in the stoichiometry matrix. By default None.
+        discontinuities : ArrayLike, optional
+            An array of time coordinates where the time dependent rate constants are discontinuous. Simulation will smartly avoid
+            walking over discontinuities and will instead stop at each one. By default None.
         jit : bool, optional
             If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation helper functions, by default True.
         propensity_function : Callable or None, optional
@@ -168,7 +174,12 @@ class Simulator(ABC):
 
         self.k = k
         self.N = N.astype(float)
+        self.Nplus  = N * (N > 0)
+        self.Nminus = N * (N < 0)
         self.kinetic_order_matrix = kinetic_order_matrix.astype(float)
+
+        self.poisson_products = poisson_product_mask is None
+        self.poisson_product_mask = poisson_product_mask
 
         self.discontinuities = discontinuities if discontinuities is not None else []
 
