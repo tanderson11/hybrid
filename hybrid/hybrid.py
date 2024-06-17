@@ -462,10 +462,10 @@ class HybridSimulator(Simulator):
     def _get_update(N, Nplus, Nminus, pathway, shape, rng, poisson_product_mask=None):
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
-        if poisson_product_mask is None:
-            update = np.transpose(N[:,pathway])
+        if poisson_product_mask is not None and poisson_product_mask[pathway]:
+            update = rng.poisson(np.transpose(Nplus[:,pathway])) + np.transpose(Nminus[:,pathway])
         else:
-            update = rng.poisson(np.transpose(N[:,pathway]))
+            update = np.transpose(N[:,pathway])
 
         update = update.reshape(shape)
         return update
