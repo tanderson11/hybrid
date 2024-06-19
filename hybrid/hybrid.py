@@ -55,8 +55,22 @@ class FixedThresholdPartitioner(PartitionScheme):
 @dataclass
 class NThresholdPartitioner(PartitionScheme):
     threshold: float
+    ignore_catalysts: bool = True
 
     def partition_function(self, N, kinetic_order_matrix, y, propensities):
+        # we have two approaches: if we ignore catalysts, we check the stoichiometry matrix
+        # any non-zero entry in N corresponds to a creation/destruction in the reaction
+        # and we partition as stochastic any reaction with one or more such species below the threshold
+        if self.ignore_catalysts:
+            masked_N = np.ma.masked_array(N != 0, N == 0)
+            a = (masked_N.T * y).T
+            mask = (np.nanmin(a, axis=0)) <= self.threshold
+            stochastic = mask.data
+            return Partition(~stochastic, stochastic, None)
+
+        # if we consider catalysts, we use the kinetic order matrix to determine if any reactant or product
+        # is below the threshold
+
         # if any reactant < threshold, make that reaction stochastic
         #import pdb; pdb.set_trace()
         masked_kinetic_order = np.ma.masked_array(kinetic_order_matrix > 0, kinetic_order_matrix == 0)
@@ -162,13 +176,13 @@ class HybridSimulator(Simulator):
                 assert(isinstance(propensity_function, CPUDispatcher))
 
     @classmethod
-    def construct_dydt_function(cls, N, expand=True, jit=True):
+    def construct_dydt_function(cls, N, jit=True):
         if jit:
-            return cls.jit_dydt_factory(N, expand=expand)
+            return cls.jit_dydt_factory(N)
         return cls.dydt_factory(N)
 
     @staticmethod
-    def jit_dydt_factory(N, expand=True):
+    def jit_dydt_factory(N):
         @numba.jit(nopython=True)
         def jit_dydt(t, y_expanded, deterministic_mask, stochastic_mask, propensity_function, hitting_point):
             # by fiat the last entry of y will carry the integral of stochastic rates
