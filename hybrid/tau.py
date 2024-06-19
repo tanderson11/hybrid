@@ -339,11 +339,11 @@ class TauLeapSimulator(GillespieSimulator):
         return rng.poisson(tau * propensities)
 
     @classmethod
-    def implicit_tau_reaction_firings(cls, N, y, t, tau, propensities, rng, propensity_calculator):
+    def implicit_tau_reaction_firings(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator):
         # Sandmann 2009 summarizing Rathinam 2003
 
         # number of firings from the explicit method
-        explicit_update, reaction_firings = cls.explicit_tau_update_proposal(N, tau, propensities, rng, return_firings=True)
+        explicit_update, reaction_firings = cls.explicit_tau_update_proposal(N, Nplus, Nminus, tau, propensities, rng, return_firings=True)
         # convert firings => mean 0
         mean_0 = explicit_update - tau * N @ propensities
         # now solve the implicit equation by first defining an objective function
@@ -380,7 +380,7 @@ class TauLeapSimulator(GillespieSimulator):
 
     @classmethod
     def implicit_tau_update_proposal(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, return_firings=False, poisson_product_mask=None):
-        k_j = cls.implicit_tau_reaction_firings(N, y, t, tau, propensities, rng, propensity_calculator)
+        k_j = cls.implicit_tau_reaction_firings(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator)
         update = cls._update_from_firings(N, k_j, poisson_product_mask)
         if return_firings:
             return update, k_j
@@ -471,7 +471,7 @@ class TauLeapSimulator(GillespieSimulator):
             #print(tau)
             #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
             pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], self.Nplus[:, critical_reactions], self.Nminus[:, critical_reactions], propensities[critical_reactions], rng, poisson_product_mask=poisson_product_mask)
-            tau_update = self.explicit_tau_update_proposal(self.N[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
+            tau_update = self.explicit_tau_update_proposal(self.N[:, ~critical_reactions], self.Nplus[:, ~critical_reactions], self.Nminus[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
 
             if ((y+update) < 0 ).any():
