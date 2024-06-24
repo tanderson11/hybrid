@@ -56,14 +56,24 @@ class FixedThresholdPartitioner(PartitionScheme):
 class NThresholdPartitioner(PartitionScheme):
     threshold: float
     ignore_catalysts: bool = True
+    divide_by_stoichiometry: bool = True
 
     def partition_function(self, N, kinetic_order_matrix, y, propensities):
+        # if we want to divide by stoichiometry, we mean that if a reaction creates 2 X,
+        # and threshold=100 then X must be at 200 for the reaction to be deterministic
+        # in other words, we ensure that elementary progress in the rx does not change X by
+        # more than 1 part in N
+        # if we do NOT want to divide by stoichiometry, then we normalize the matrices
+        if not self.divide_by_stoichiometry:
+            N = np.sign(N)
+            kinetic_order_matrix = np.sign(kinetic_order_matrix)
+
         # we have two approaches: if we ignore catalysts, we check the stoichiometry matrix
         # any non-zero entry in N corresponds to a creation/destruction in the reaction
         # and we partition as stochastic any reaction with one or more such species below the threshold
         if self.ignore_catalysts:
-            masked_N = np.ma.masked_array(N != 0, N == 0)
-            a = (masked_N.T * y).T
+            masked_N = np.ma.masked_array(np.abs(N), N == 0)
+            a = (y / masked_N.T).T
             mask = (np.nanmin(a, axis=0)) <= self.threshold
             stochastic = mask.data
             return Partition(~stochastic, stochastic, None)
@@ -72,14 +82,13 @@ class NThresholdPartitioner(PartitionScheme):
         # is below the threshold
 
         # if any reactant < threshold, make that reaction stochastic
-        #import pdb; pdb.set_trace()
-        masked_kinetic_order = np.ma.masked_array(kinetic_order_matrix > 0, kinetic_order_matrix == 0)
-        a = (masked_kinetic_order.T * y).T
+        masked_kinetic_order = np.ma.masked_array(kinetic_order_matrix, kinetic_order_matrix == 0)
+        a = (y / masked_kinetic_order.T).T
         # axis = 0: look at minimum specimens across each reaction
         reactant_mask = (np.nanmin(a, axis=0)) <= self.threshold
         # if any product < threshold, make that reaction stochastic
-        masked_N = np.ma.masked_array(N > 0, N <= 0)
-        a = (masked_N.T * y).T
+        masked_N = np.ma.masked_array(N, N <= 0)
+        a = (y / masked_N.T).T
         # axis = 0: look at minimum specimens across each reaction
         product_mask = np.nanmin(a, axis=0) <= self.threshold
 
@@ -424,6 +433,7 @@ class HybridSimulator(Simulator):
         if status == self.status_klass.partition_change:
             print(f"Stopping for partition change. t={t_event}")
 
+        assert((y_history[:, -1] >= 0).all())
         # round the species quantities at our final time point
         y_history[:, -1] = util.round_with_method(y_history[:, -1], self.simulation_options.round, rng)
 
