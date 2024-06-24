@@ -57,18 +57,24 @@ class GillespieSimulator(Simulator):
         return jit_calculate_propensities
 
     @classmethod
-    def find_hitting_time_inhomogenous(cls, t, y, propensity_function, rng):
+    def find_hitting_time_inhomogenous(cls, t, t_end, y, propensity_function, rng):
         hitting_point = rng.exponential(1)
         #hitting_point = 1
         #hitting_point = np.log(1/rng.random())
 
         f = cls.inhomogeneous_upper_bound_f_factory(t, y, hitting_point, propensity_function)
 
-        least_sqs = least_squares(f, x0=0.1, bounds=(0.0, np.inf))
+        x0 = min(0.1, (t_end-t)/2)
+        least_sqs = least_squares(f, x0=x0, bounds=(0.0, t_end-t))
         hitting_time = least_sqs.x[0]
 
         if not least_sqs.success:
             raise ValueError('least squares failed')
+
+        # we didn't really find the hitting time, we stopped ourselves from exceeding the end of the time span
+        # (the time dependence might not be well defined there) return inf to avoid causing a final event
+        if np.isclose(hitting_time, t_end-t):
+            return np.inf
 
         return hitting_time
 
@@ -152,8 +158,8 @@ class GillespieSimulator(Simulator):
                 propensities = self.propensity_function(t, y)
                 return propensities[~noncontributing_reactions]
 
-            hitting_time = self.find_hitting_time_inhomogenous(t, y, propensity_function, rng)
-    
+            hitting_time = self.find_hitting_time_inhomogenous(t, t_end, y, propensity_function, rng)
+
         if t + hitting_time > t_end:
             update = np.zeros_like(y)
             return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), self.status_klass.t_end)

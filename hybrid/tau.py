@@ -444,7 +444,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau_prime_prime = np.inf
         else:
             if self.time_handling == TimeHandling.inhomogeneous:
-                tau_prime_prime = self.find_hitting_time_inhomogenous(t, y, self.propensity_function, rng)
+                tau_prime_prime = self.find_hitting_time_inhomogenous(t, t_end, y, self.propensity_function, rng)
             else:
                 tau_prime_prime = self.find_hitting_time_homogeneous(critical_sum, rng)
             #tau_prime_prime = 1 / critical_sum

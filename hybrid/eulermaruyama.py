@@ -66,6 +66,9 @@ def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None
         # but we use the # of firings in order to make sure the final change in state is stoichiometrically realizable
         total_firings += pathway_drift + pathway_diffusion
 
+        if ((y + dy) < 0).any():
+            raise ValueError("negative state value achieved in Euler-Maruyama integration")
+
         y = y + dy
         t = t + dt
         t_history.append(t)
@@ -110,4 +113,5 @@ def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None
         nfev,
         t_events=np.array([])
     )
+
     return result
