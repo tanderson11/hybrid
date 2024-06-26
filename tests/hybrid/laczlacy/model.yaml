@@ -1,0 +1,140 @@
+species:
+- name: LacZ
+- name: LacY
+- name: PLac
+- name: PLacRNAP
+- name: TrLacZ1
+- name: TrLacY1
+- name: TrLacZ2
+- name: TrLacY2
+- name: RbsLacZ
+- name: RbsLacY
+- name: TrRbsLacZ
+- name: TrRbsLacY
+- name: dgrLacZ
+- name: dgrLacY
+- name: dgrRbsLacZ
+- name: dgrRbsLacY
+- name: RbsRibosomeLacZ
+- name: RbsRibosomeLacY
+- name: lactose
+- name: LacZlactose
+- name: product
+reactions:
+- reactants:
+  - PLac
+  products:
+  - PLacRNAP
+  k: 0.17 * RNAP
+- reactants:
+  - PLacRNAP
+  products:
+  - PLac
+  k: 10
+- reactants:
+  - PLacRNAP
+  products:
+  - TrLacZ1
+  k: 1
+- reactants:
+  - TrLacZ1
+  products:
+  - RbsLacZ
+  - PLac
+  - TrLacZ2
+  k: 1
+- reactants:
+  - TrLacZ2
+  products:
+  - TrLacY1
+  k: 0.015
+- reactants:
+  - TrLacY1
+  products:
+  - RbsLacY
+  - TrLacY2
+  k: 1
+- reactants:
+  - TrLacY2
+  products: []
+  k: 0.36
+- reactants:
+  - RbsLacZ
+  products:
+  - RbsRibosomeLacZ
+  k: 0.17 * Ribosome
+- reactants:
+  - RbsLacY
+  products:
+  - RbsRibosomeLacY
+  k: 0.17 * Ribosome
+- reactants:
+  - RbsRibosomeLacZ
+  products:
+  - RbsLacZ
+  k: 0.45
+- reactants:
+  - RbsRibosomeLacY
+  products:
+  - RbsLacY
+  k: 0.45
+- reactants:
+  - RbsRibosomeLacZ
+  products:
+  - TrRbsLacZ
+  - RbsLacZ
+  k: 0.4
+- reactants:
+  - RbsRibosomeLacY
+  products:
+  - TrRbsLacY
+  - RbsLacY
+  k: 0.4
+- reactants:
+  - TrRbsLacZ
+  products:
+  - LacZ
+  k: 0.015
+- reactants:
+  - TrRbsLacY
+  products:
+  - LacY
+  k: 0.036
+- reactants:
+  - LacZ
+  products:
+  - dgrLacZ
+  k: 6.42e-05
+- reactants:
+  - LacY
+  products:
+  - dgrLacY
+  k: 6.42e-05
+- reactants:
+  - RbsLacZ
+  products:
+  - dgrRbsLacZ
+  k: 0.3
+- reactants:
+  - RbsLacY
+  products:
+  - dgrRbsLacY
+  k: 0.3
+- reactants:
+  - LacZ
+  - lactose
+  products:
+  - LacZlactose
+  k: 9.52e-05
+- reactants:
+  - LacZlactose
+  products:
+  - product
+  - LacZ
+  k: 431
+- reactants:
+  - LacY
+  products:
+  - lactose
+  - LacY
+  k: 14

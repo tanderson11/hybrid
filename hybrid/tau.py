@@ -91,7 +91,8 @@ class TauLeapSimulator(GillespieSimulator):
 
         self.equilibrium_mask = equilibrium_mask
         if equilibrium_mask is not None and equilibrium_mask.any():
-            assert self.method == Method.implicit, "specifying reaction channels as being near equilibrium is only supported for implicit tau leaping"
+            if self.method != Method.implicit: print("WARNING: some reactions are specified to treat as near equilibrium, but tau leaping is being done explicitly, so those instructions will be ignored.")
+            #assert self.method == Method.implicit, "specifying reaction channels as being near equilibrium is only supported for implicit tau leaping"
 
         if self.inhomogeneous and self.time_handling == TimeHandling.homogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation, but simulator hasn't been told to use inhomogeneous leaping. Is this a test?")
