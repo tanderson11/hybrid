@@ -7,6 +7,7 @@ from tests.filesystem_test import FilesystemTestMeta, EndpointTest
 
 decaying_isomerization_tests = discover_tests(os.path.dirname(__file__), './decaying_isomerization', include_check=True)
 schlogl_tests = discover_tests(os.path.dirname(__file__), './schlogl')
+laczlacy_tests = discover_tests(os.path.dirname(__file__), './laczlacy')
 
 class DecayingIsomerizationCollection(FilesystemTestMeta):
     test_collection = decaying_isomerization_tests
@@ -29,6 +30,12 @@ class SchloglCollection(FilesystemTestMeta):
     test_collection = schlogl_tests
 
 class TestSchlogl(EndpointTest, metaclass=SchloglCollection):
+    pass
+
+class LacZLacYCollection(FilesystemTestMeta):
+    test_collection = laczlacy_tests
+
+class TestLacZLacY(EndpointTest, metaclass=LacZLacYCollection):
     pass
 
 if __name__ == '__main__':
