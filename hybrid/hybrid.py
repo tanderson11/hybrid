@@ -127,7 +127,7 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
 class HybridSimulator(Simulator):
     status_klass = HybridStepStatus
-    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
+    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], poisson_products_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -171,7 +171,7 @@ class HybridSimulator(Simulator):
         """
         if isinstance(k, str):
             raise TypeError(f"Instead of a function or matrix, found this message for k: {k}")
-        super().__init__(k, N, kinetic_order_matrix, poisson_product_mask=poisson_product_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+        super().__init__(k, N, kinetic_order_matrix, poisson_products_mask=poisson_products_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         if isinstance(partition_function, PartitionScheme):
             partition_function = partition_function.partition_function
         self.partition_function = partition_function
@@ -188,7 +188,7 @@ class HybridSimulator(Simulator):
     def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
         from hybrid.model import SimulationAwareModel
         if isinstance(m, SimulationAwareModel):
-            kwargs['poisson_product_mask'] = m.poisson_product_mask()
+            kwargs['poisson_products_mask'] = m.poisson_products_mask()
         return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], jit=jit, **kwargs)
 
     @classmethod
@@ -483,17 +483,17 @@ class HybridSimulator(Simulator):
         if self.simulation_options.contrived_no_reaction_rate is not None and np.squeeze(path_index) == len(valid_selections)-1:
             return Step(t_history, y_history, self.status_klass.contrived_no_reaction, step_solved.nfev, pathway=CONTRIVED_PATHWAY)
 
-        update = self._get_update(self.N, self.Nplus, self.Nminus, path_index, y.shape, rng, poisson_product_mask=self.poisson_product_mask)
+        update = self._get_update(self.N, self.Nplus, self.Nminus, path_index, y.shape, rng, poisson_products_mask=self.poisson_products_mask)
         y_history[:, -1] += update
 
         assert len(path_index)==1
         return Step(t_history, y_history, status, step_solved.nfev, pathway=path_index[0])
 
     @staticmethod
-    def _get_update(N, Nplus, Nminus, pathway, shape, rng, poisson_product_mask=None):
+    def _get_update(N, Nplus, Nminus, pathway, shape, rng, poisson_products_mask=None):
         # N_ij = net change in i after unit progress in reaction j
         # so the appropriate column of the stoich matrix tells us how to do our update
-        if poisson_product_mask is not None and poisson_product_mask[pathway]:
+        if poisson_products_mask is not None and poisson_products_mask[pathway]:
             update = rng.poisson(np.transpose(Nplus[:,pathway])) + np.transpose(Nminus[:,pathway])
         else:
             update = np.transpose(N[:,pathway])

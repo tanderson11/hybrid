@@ -141,7 +141,7 @@ class Step(NamedTuple):
 class Simulator(ABC):
     run_klass = Run
     status_klass = DummyStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, poisson_products_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None) -> None:
         """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -152,7 +152,7 @@ class Simulator(ABC):
             The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
         kinetic_order_matrix : ArrayLike
             The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
-        poisson_product_mask : ArrayLike, optional
+        poisson_products_mask : ArrayLike, optional
             A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
             from a Poisson distribution with mean given by the corresponding element in the stoichiometry matrix. By default None.
         discontinuities : ArrayLike, optional
@@ -182,8 +182,8 @@ class Simulator(ABC):
         self.Nminus = N * (N < 0)
         self.kinetic_order_matrix = kinetic_order_matrix.astype(float)
 
-        self.poisson_products = poisson_product_mask is None
-        self.poisson_product_mask = poisson_product_mask
+        self.poisson_products = poisson_products_mask is None
+        self.poisson_products_mask = poisson_products_mask
 
         self.discontinuities = discontinuities if discontinuities is not None else []
 

@@ -17,9 +17,9 @@ class SimulationAwareModel(Model):
         equilibrium_mask = np.array([r.assume_quasi_equilibrium for r in self.all_reactions])
         return equilibrium_mask
     
-    def poisson_product_mask(self):
-        poisson_product_mask = np.array([r.poisson_products for r in self.all_reactions])
-        return poisson_product_mask
+    def poisson_products_mask(self):
+        poisson_products_mask = np.array([r.poisson_products for r in self.all_reactions])
+        return poisson_products_mask
 
     @classmethod
     def from_dict(cls, dictionary, functions_by_name=None, species_class=Species, reaction_class=SimulationAwareReaction, reaction_rate_family_class=ReactionRateFamily):
