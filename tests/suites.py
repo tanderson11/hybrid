@@ -7,4 +7,5 @@ suites = {
     'decayingisom': run_hybrid.TestDecayingIsomerization,
     'schlogl': run_hybrid.TestSchlogl,
     'timedependent': run_time_dependent.TestTimeDependent,
+    'laczlacy': run_hybrid.TestLacZLacY,
 }
