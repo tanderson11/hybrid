@@ -79,6 +79,14 @@ class SimulatorFactory(ConfigParser):
 
         return self.simulator_klass(*args, **kwargs, **self_dict, **options)
 
+    def make_simulator_from_model(self, model, *args, **kwargs):
+        self_dict = self.to_dict()
+        self_dict.pop('version')
+        self_dict.pop('description')
+        options = self_dict.pop('options')
+
+        return self.simulator_klass.from_model(model, *args, **kwargs, **self_dict, **options)
+
 @dataclass
 class GillespieSimulatorFactory(SimulatorFactory):
     simulator = 'gillespie'

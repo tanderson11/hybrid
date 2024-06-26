@@ -6,6 +6,8 @@ from itertools import product
 
 import reactionmodel.parser
 
+from hybrid.model import SimulationAwareModel
+
 from hybrid.parse import PreconfiguredSimulatorLoader
 
 def discover_tests(root, test_directory_pattern='*', include_check=False, **spec_kwargs):
@@ -53,7 +55,7 @@ def specs_from_dir(dir, format='yaml', model_base = 'model', params_base = 'para
     ic_paths     = get_files(dir, f'{initial_base}.{format}', 'initial_conditions', f'*.{format}')
     specifications = {}
     for model_path, params_path, config_path, t_path, ic_path in product(model_paths, params_paths, config_paths, t_paths, ic_paths):
-        specification = reactionmodel.parser.load(model_path, params_path, config_path, t_path, ic_path, format=format, ConfigParser=PreconfiguredSimulatorLoader)
+        specification = reactionmodel.parser.load(model_path, params_path, config_path, t_path, ic_path, format=format, ConfigParser=PreconfiguredSimulatorLoader, model_class=SimulationAwareModel)
         # use the parameter and ic file names as a unique identifier for this combination
         # later, we will look up all the combinations that we have test data for, and run simulations to check
         model = os.path.basename(model_path).split('.')[0]

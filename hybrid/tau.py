@@ -19,7 +19,7 @@ class Method(Enum):
 
 class TimeHandling(Enum):
     homogeneous = 'homogeneous'
-    inhomogeneous = 'inhomogeneous'
+    inhomogeneous_monotonic = 'inhomogeneous_monotonic'
 
 class TauLeapers(Enum):
     gp = 'gp'
@@ -69,7 +69,7 @@ class TauLeapOptions():
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
     status_klass = TauStepStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
+    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, equilibrium_mask: ArrayLike = None, poisson_product_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
         super().__init__(k, N, kinetic_order_matrix, poisson_product_mask=poisson_product_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         self.N2 = self.N**2
         simulator_options = TauLeapOptions(**option_kwargs)
@@ -89,8 +89,20 @@ class TauLeapSimulator(GillespieSimulator):
         self.species_creation_is_critical = simulator_options.species_creation_is_critical
         self.only_reactants_critical = simulator_options.only_reactants_critical
 
-        if self.inhomogeneous and self.time_handling != TimeHandling.inhomogeneous:
+        self.equilibrium_mask = equilibrium_mask
+        if equilibrium_mask is not None and equilibrium_mask.any():
+            assert self.method == Method.implicit, "specifying reaction channels as being near equilibrium is only supported for implicit tau leaping"
+
+        if self.inhomogeneous and self.time_handling == TimeHandling.homogeneous:
             print("WARNING: inhomogeneous rates in Tau leap simulation, but simulator hasn't been told to use inhomogeneous leaping. Is this a test?")
+
+    @classmethod
+    def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
+        from hybrid.model import SimulationAwareModel
+        if isinstance(m, SimulationAwareModel):
+            kwargs['equilibrium_mask'] = m.equilibrium_mask()
+            kwargs['poisson_product_mask'] = m.poisson_product_mask()
+        return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], jit=jit, **kwargs)
 
     def initiate_run(self, t0, y0, history_length=1e6):
         return self.run_klass(t0, y0, self.gillespie_steps_on_rejection, history_length=history_length)
@@ -128,7 +140,7 @@ class TauLeapSimulator(GillespieSimulator):
         return critical
 
     def gillespie_step_wrapper(self, t, y, t_end, rng, t_eval):
-        if self.time_handling == TimeHandling.inhomogeneous:
+        if self.time_handling == TimeHandling.inhomogeneous_monotonic:
             g_step = self.gillespie_step(t, y, t_end, rng, t_eval)
         else:
             g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
@@ -144,7 +156,7 @@ class TauLeapSimulator(GillespieSimulator):
         return self.tau_step(t, y, t_end, rng, t_eval)
 
     def candidate_time_inhomogeneous(self, t, y, propensities, reaction_mask, t_end):
-        assert self.leap_type == TauLeapers.species, "time inhomogeneous tau leaping is only supported with if leap type is species"
+        assert self.leap_type == TauLeapers.species, "time inhomogeneous tau leaping is only supported with leap type of species"
         # approximately bound the change in each propensity *due to leaping* to one part in epsilon/2
         tau = self.species_tau_leap_proposal(y, self.epsilon/2, self.g, propensities[reaction_mask], self.N[:, reaction_mask], self.N2[:, reaction_mask])
         # bound the change in each propensity *due to explicit time dependence* to one part in epsilon/2
@@ -152,12 +164,37 @@ class TauLeapSimulator(GillespieSimulator):
 
         return min(tau, tau_prime)
 
+    @staticmethod
+    def find_acceptable_inhomogeneous_tau_halving(calculate_nonzero_endpoint_props, calculate_largest_fraction_change, tau_max, epsilon):
+        acceptable = False
+
+        while not acceptable:
+            tau = tau_max / 2
+            end_props = calculate_nonzero_endpoint_props(tau)
+            if calculate_largest_fraction_change(end_props) < epsilon:
+                acceptable = True
+
+        return tau
+
+    @staticmethod
+    def find_acceptable_inhomogeneous_tau_lsqs(calculate_nonzero_endpoint_props, calculate_largest_fraction_change, tau_max, epsilon):
+        def objective_function(tau):
+            '''Returns 0 when tau maximizes our tolerance for error due to explicit time dependence.'''
+            nonzero_end_propensities = calculate_nonzero_endpoint_props(tau)
+            part_change = calculate_largest_fraction_change(nonzero_end_propensities)
+            return np.abs(part_change - epsilon)
+        lsqs = least_squares(objective_function, x0=tau_max/2, bounds=(0.0, tau_max))
+        if not lsqs.success:
+            print(lsqs)
+            raise ValueError('least squares fit in time inhomogeneous leap failed')
+        return lsqs.x[0]
+
     def inhomogeneous_time_proposal(self, t, y, epsilon, propensities, reaction_mask, tau_max):
         """Calculate a forward-leap time that bounds the changes in propensities due to explicit time dependence within one part in epsilon.
 
         This only works if time dependence is entry-wise monotonic in the interval (t, t+tau_max)."""
         end_propensities = self.propensity_function(t + tau_max, y)[reaction_mask]
-        # if a propensity moves from 0 to a positive number, then it will be impossible to bound the change in propensities
+        # if a rate constant moves from 0 to a positive number, then it will be impossible to bound the change in propensities
         # by epsilon, so we should instead default to gillespie steps
         if (end_propensities[propensities == 0] > 0).any():
             return 0
@@ -179,16 +216,13 @@ class TauLeapSimulator(GillespieSimulator):
         if calculate_largest_fraction_change(calculate_nonzero_endpoint_props([tau_max])) < epsilon:
             return tau_max
 
-        def objective_function(tau):
-            '''Returns 0 when tau maximizes our tolerance for error due to explicit time dependence.'''
-            nonzero_end_propensities = calculate_nonzero_endpoint_props(tau)
-            part_change = calculate_largest_fraction_change(nonzero_end_propensities)
-            return np.abs(part_change - epsilon)
-        lsqs = least_squares(objective_function, x0=tau_max/2, bounds=(0.0, tau_max))
-        if not lsqs.success:
-            print(lsqs)
-            raise ValueError('least squares fit in time inhomogeneous leap failed')
-        return lsqs.x[0]
+        method = 'lsqs'
+
+        if method == 'lsqs':
+            return self.find_acceptable_inhomogeneous_tau_lsqs(calculate_nonzero_endpoint_props, calculate_largest_fraction_change, tau_max, epsilon)
+        elif method == 'halving':
+            return self.find_acceptable_inhomogeneous_tau_havling(calculate_nonzero_endpoint_props, calculate_largest_fraction_change, tau_max, epsilon)
+
 
     def candidate_time(self, t, y, propensities, reaction_mask, t_end):
         """Calculate a value of tau to leap forward in time that satisfies the leap condition for the reactions with value True in reaction_mask."""
@@ -339,33 +373,56 @@ class TauLeapSimulator(GillespieSimulator):
         return rng.poisson(tau * propensities)
 
     @classmethod
-    def implicit_tau_reaction_firings(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator):
-        # Sandmann 2009 summarizing Rathinam 2003
-
+    def implicit_tau_reaction_firings(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, jacboian_calculator):
+        # all of this is Sandmann 2009 summarizing Rathinam 2003
+        mean_explicit_firings = tau * propensities
         # number of firings from the explicit method
-        explicit_update, reaction_firings = cls.explicit_tau_update_proposal(N, Nplus, Nminus, tau, propensities, rng, return_firings=True)
+        explicit_update, drawn_explicit_firings = cls.explicit_tau_update_proposal(N, Nplus, Nminus, tau, propensities, rng, return_firings=True)
         # convert firings => mean 0
-        mean_0 = explicit_update - tau * N @ propensities
+        mean_0 = explicit_update - tau * (N @ propensities)
         # now solve the implicit equation by first defining an objective function
         def objective_function(y_end):
             y_end_propensities = propensity_calculator(t+tau, y_end)
             mean_y_end_firings = tau * y_end_propensities
             return y_end - y - mean_0 - np.sum(mean_y_end_firings * N, axis=1)
 
+        # more precisely how Sandmann did it
+        #def objective_function(y_end):
+        #    y_end_propensities = propensity_calculator(t+tau, y_end)
+        #    mean_y_end_firings = tau * y_end_propensities
+        #
+        #    firings = np.round(drawn_explicit_firings - mean_explicit_firings + mean_y_end_firings)
+        #    return y_end - y + N @ (firings)
+
         # closes around reaction_firings
         def calculate_k_j(y_end_propensities):
-            return reaction_firings + tau * y_end_propensities - tau * propensities
+            mean_y_end_firings = tau * y_end_propensities
+            return drawn_explicit_firings + mean_y_end_firings - mean_explicit_firings
 
-        y_end = fsolve(objective_function, y)
+        #y_end = fsolve(objective_function, y)
+        #y_end_lsqs = least_squares(objective_function, x0=y)
+        #y_end_lsqs_jac = least_squares(objective_function, x0=y, jac=jacboian_calculator)
+        y_end_lsqs_xtol = least_squares(objective_function, x0=y, xtol=1e-8)
+        #y_end_lsqs_xtol_jac = least_squares(objective_function, x0=y, xtol=1e-3, jac=jacboian_calculator)
+        y_end_lsqs = y_end_lsqs_xtol
+        #y_end_lsqs_3 = least_squares(objective_function, x0=y, ftol=1e-4)
+        #y_end_lsqs_4 = least_squares(objective_function, x0=y, )
+        assert y_end_lsqs.success
+        y_end = y_end_lsqs.x
+
         y_end_propensities = propensity_calculator(t+tau, y_end)
         # after calculating y_end, we will slightly adjust it to get a stoichiometrically realizable, integer-valued vector
         k_j = calculate_k_j(y_end_propensities)
         k_j = np.round(k_j)
 
+        if (k_j < 0).any():
+            print(t, "negative")
+
         return k_j
 
     @classmethod
     def _update_from_firings(cls, N, Nplus, Nminus, firings, rng, poisson_product_mask=None):
+        #assert (firings >= 0).all()
         if poisson_product_mask is None:
             return N @ firings
         product_update_base = Nplus*firings
@@ -379,9 +436,9 @@ class TauLeapSimulator(GillespieSimulator):
         return update
 
     @classmethod
-    def implicit_tau_update_proposal(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, return_firings=False, poisson_product_mask=None):
-        k_j = cls.implicit_tau_reaction_firings(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator)
-        update = cls._update_from_firings(N, k_j, poisson_product_mask)
+    def implicit_tau_update_proposal(cls, N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, jacobian_calculator, return_firings=False, poisson_product_mask=None):
+        k_j = cls.implicit_tau_reaction_firings(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, jacobian_calculator)
+        update = cls._update_from_firings(N, Nplus, Nminus, k_j, rng, poisson_product_mask=poisson_product_mask)
         if return_firings:
             return update, k_j
         return update
@@ -394,14 +451,14 @@ class TauLeapSimulator(GillespieSimulator):
             return update, reaction_firings
         return update
 
-    def tau_update_proposal_avoiding_negatives(self, N, Nplus, Nminus, y, t, tau, propensities, rng, poisson_product_mask=None, method=Method.explicit, propensity_calculator=None):
+    def tau_update_proposal_avoiding_negatives(self, N, Nplus, Nminus, y, t, tau, propensities, rng, poisson_product_mask=None, method=Method.explicit, propensity_calculator=None, jacobian_calculator=None):
         bad_update_flag = True
         while bad_update_flag:
             if method == Method.explicit:
                 update = self.explicit_tau_update_proposal(N, Nplus, Nminus, tau, propensities, rng, poisson_product_mask=poisson_product_mask)
             else:
                 assert method == Method.implicit
-                update = self.implicit_tau_update_proposal(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, poisson_product_mask=poisson_product_mask)
+                update = self.implicit_tau_update_proposal(N, Nplus, Nminus, y, t, tau, propensities, rng, propensity_calculator, jacobian_calculator, poisson_product_mask=poisson_product_mask)
 
             if not ((y + update) < 0).any():
                 bad_update_flag = False
@@ -424,16 +481,20 @@ class TauLeapSimulator(GillespieSimulator):
 
         poisson_product_mask = None if self.poisson_product_mask is None else self.poisson_product_mask[~critical_reactions]
 
-
         # if all reactions are critical, we won't tau leap, we'll just do gillespie
         if (critical_reactions).all():
             tau_prime = np.inf
         else:
-            #import pdb; pdb.set_trace()
+            # when calculating the acceptable leap time, we ignore critical processes
+            reaction_mask = ~critical_reactions
+            # for the implicit method, we have a mask of those reactions that we should consider to be
+            # near equilibrium, which should NOT be used to determine the acceptable leap time
+            if self.equilibrium_mask is not None and self.method == Method.implicit:
+                reaction_mask = reaction_mask & (~self.equilibrium_mask)
             if self.inhomogeneous:
-                tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, ~critical_reactions, t_end)
+                tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, reaction_mask, t_end)
             else:
-                tau_prime = self.candidate_time(t, y, propensities, ~critical_reactions, t_end)
+                tau_prime = self.candidate_time(t, y, propensities, reaction_mask, t_end)
             tau_prime = min(t_end - t, tau_prime)
 
         if tau_prime < self.rejection_multiple / total_propensity:
@@ -443,8 +504,24 @@ class TauLeapSimulator(GillespieSimulator):
         if critical_sum == 0:
             tau_prime_prime = np.inf
         else:
-            if self.time_handling == TimeHandling.inhomogeneous:
-                tau_prime_prime = self.find_hitting_time_inhomogenous(t, t_end, y, self.propensity_function, rng)
+            if self.time_handling == TimeHandling.inhomogeneous_monotonic:
+                # we desperately want to avoid the tragedy of calculating the integral for the hitting time
+                # so we exploit monotonicity to ask how quickly could the next critical reaction firing happen
+                # if, even at its fastest occurrence, it would not happen before our proposed leap,
+                # then we leap
+                worst_case_critical_sum = max(critical_sum, np.sum(self.propensity_function(t + tau_prime, y)))
+                tau_prime_prime_upper_bound = self.find_hitting_time_homogeneous(worst_case_critical_sum, rng)
+
+                # if, however, the worst case does happen before our leap,
+                # then we refine our estimate of the arrival time to the exact arrival time of the
+                # inhomogeneous poisson process
+                if tau_prime < tau_prime_prime_upper_bound:
+                    tau_prime_prime = self.find_hitting_time_inhomogenous(t, t_end, y, self.propensity_function, rng)
+                else:
+                    # this represents the knowledge that the worst case arrival time of the critical process
+                    # is after the proposed leap. by setting tau_prime_prime to inf,
+                    # the conditional on the future line will always be True, and a non-critical leap will be executed
+                    tau_prime_prime = np.inf
             else:
                 tau_prime_prime = self.find_hitting_time_homogeneous(critical_sum, rng)
             #tau_prime_prime = 1 / critical_sum
@@ -454,12 +531,33 @@ class TauLeapSimulator(GillespieSimulator):
             tau = tau_prime
 
             propensity_calculator = None
+            jacobian_calculator = None
             if self.method == Method.implicit:
                 def propensity_calculator(t, y):
                     propensities = self.propensity_function(t, y)
                     return propensities[~critical_reactions]
 
-            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], self.Nplus[:, ~critical_reactions], self.Nminus[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, poisson_product_mask=poisson_product_mask, method=self.method, propensity_calculator=propensity_calculator)
+                def jacobian_calculator(y):
+                    powers = (self.kinetic_order_matrix - 1)
+                    y = np.expand_dims(y, axis=1)
+                    derivatives = np.power(y, powers)
+
+                    # derivative is 0 in every y_i with no rate involvement
+                    derivatives = np.where(
+                        powers < 0,
+                        0,
+                        derivatives
+                    )
+                    derivatives *= self.kinetic_order_matrix
+
+                    # transpose so that rows are reactions
+                    derivatives = derivatives.T
+                    assert derivatives.shape[1] == len(y)
+                    # the actual changes in the *Ys* due to the changes in the propensities
+                    jacobian = self.N @ derivatives
+                    return jacobian
+
+            tau, update = self.tau_update_proposal_avoiding_negatives(self.N[:, ~critical_reactions], self.Nplus[:, ~critical_reactions], self.Nminus[:, ~critical_reactions], y, t, tau, propensities[~critical_reactions], rng, poisson_product_mask=poisson_product_mask, method=self.method, propensity_calculator=propensity_calculator, jacobian_calculator=jacobian_calculator)
 
             if t+tau_prime == t_end:
                 status = self.status_klass.t_end

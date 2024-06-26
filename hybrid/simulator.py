@@ -104,6 +104,10 @@ class Run():
         self.pathway_history[self.step_index+1] = step.pathway
         self.step_indices[self.step_index+1] = self.history_index
         self.step_index += 1
+
+        if (self.get_y() < 0).any():
+            assert False, "found negative specimen value"
+
         return self.get_t()
 
     def get_history(self):
@@ -194,6 +198,10 @@ class Simulator(ABC):
 
         self.species_labels = np.array(species_labels)
         self.pathway_labels = np.array(pathway_labels)
+
+    @classmethod
+    def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
+        return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], jit=jit, **kwargs)
 
     def initiate_run(self, t0, y0, history_length=1e6):
         return self.run_klass(t0, y0, history_length=history_length)
@@ -301,6 +309,9 @@ class Simulator(ABC):
                 step.t_history[-1] = np.nextafter(next_discontinuity, t_end)
 
             t = run.handle_step(step)
+
+            if np.isclose(t, t_end):
+                t = t_end
             if halt is not None and halt(run.get_t(), run.get_y()):
                 break
 

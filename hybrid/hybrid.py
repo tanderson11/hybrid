@@ -185,6 +185,13 @@ class HybridSimulator(Simulator):
                 assert(isinstance(propensity_function, CPUDispatcher))
 
     @classmethod
+    def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
+        from hybrid.model import SimulationAwareModel
+        if isinstance(m, SimulationAwareModel):
+            kwargs['poisson_product_mask'] = m.poisson_product_mask()
+        return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], jit=jit, **kwargs)
+
+    @classmethod
     def construct_dydt_function(cls, N, jit=True):
         if jit:
             return cls.jit_dydt_factory(N)
