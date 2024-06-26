@@ -1,0 +1,13 @@
+version: '1.0'
+options:
+  leap_type: species
+  method: implicit
+  epsilon: 0.01
+  rejection_multiple: 10
+  gillespie_steps_on_rejection: 100
+  critical_threshold: 10
+  species_creation_is_critical: false
+  only_reactants_critical: true
+description: Implicit. Leap condition assessed by species. Corrected leap size (Cao
+  2006). Non-negative leaping. (Cao 2005).
+simulator: tau

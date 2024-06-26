@@ -7,10 +7,12 @@ reactions:
 - description: S1 -> S2
   reactants: [S1]
   products: [S2]
+  assume_quasi_equilibrium: true
   k: 'c1'
 - description: S2 -> S1
   reactants: [S2]
   products: [S1]
+  assume_quasi_equilibrium: true
   k: 'c2'
 - description: S2 -> S3
   reactants: [S2]
