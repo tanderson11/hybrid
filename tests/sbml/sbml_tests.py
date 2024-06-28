@@ -48,7 +48,8 @@ class ZScoreTest(MeanTest):
     def _test_single(self):
         desired_species = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
         end_routine = self.end_routine_factory(desired_species=desired_species)
-        dfs = self.run_simulations(end_routine=end_routine)
+        dfs = super()._test_single(end_routine=end_routine)
+        #dfs = self.run_simulations(end_routine=end_routine)
         all_results = self.consolidate_data(dfs)
         check_targets = set([c.split('-')[0] for c in self.check_data.columns if len(c.split('-')) > 1])
 
@@ -86,4 +87,4 @@ class TestSBML(ZScoreTest, metaclass=SBMLCollection):
     t_eval = np.linspace(0.0, 50.0, 51)
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(failfast=True)

@@ -105,9 +105,11 @@ class MeanTest(TrajectoryTest):
         _df = pd.concat(dfs, axis=1)
         return df
 
-    def _test_single(self):
+    def _test_single(self, end_routine=None):
+        end_routine = end_routine if end_routine is not None else self.end_routine
         dfs = self.run_simulations(self.end_routine)
         self.df = self.consolidate_data(dfs)
+        return dfs
 
 class EndpointTest(TestSpec):
     """A test of a configuration that relies only on the final y value."""
