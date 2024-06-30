@@ -1,0 +1,5 @@
+simulator_config:
+  name: hybrid_n
+  overrides:
+    partition_function:
+      threshold: 20.0

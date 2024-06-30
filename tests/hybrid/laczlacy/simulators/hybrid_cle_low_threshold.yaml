@@ -1,0 +1,5 @@
+simulator_config:
+  name: hybrid_n_cle_contrived
+  overrides:
+    partition_function:
+      threshold: 50.0
