@@ -111,15 +111,17 @@ class TauLeapSimulator(GillespieSimulator):
     def find_L(self, y, reactants_only=True):
         # the maximum permitted firings of each reaction before reducing a population below 0
         # see formula 5 of Cao et al. 2005
+        if reactants_only:
+            N = self.N * (np.sign(self.N) == -1)
+        else:
+            N = -1 * np.abs(self.N) # make all entries negative so they are treated like reactants
         with np.errstate(divide='ignore', invalid='ignore'):
             # cryptic numpy wizardry to divide each element of y by the corresponding element of the stoichiometry matrix
-            L = np.expand_dims(y,axis=1) / self.N[None, :]
+            L = np.expand_dims(y,axis=1) / N[None, :]
+
         # drop positive entries (they are being created not destroyed in stoichiometry)
         # and invert negative entries so we can take the min
-        if reactants_only:
-            L = np.where(L < 0, -L, np.inf)
-        else:
-            L = np.where(L != 0, np.abs(L), np.inf)
+        L = np.where(L <= 0, -L, np.inf)
         L = np.squeeze(np.min(L, axis=1))
         return L
 
@@ -293,7 +295,7 @@ class TauLeapSimulator(GillespieSimulator):
         return mu_hat_i, sigma_2_hat_i
 
     @classmethod
-    def species_tau_leap_proposal(cls, y, epsilon, g, propensities, N, N2):
+    def species_tau_leap_proposal(cls, y, epsilon, g, propensities, N, N2, do_inner_max=True):
         """Propose a tau leap that uniformly bounds changes in propensities by a change in species approximation. Cao et al 2006 formula (33)."""
         # Cao et al. 2006 formula (33)
         mu_hat_i, sigma_2_hat_i = cls.calculate_mu_sigma(N, N2, propensities)
@@ -309,16 +311,18 @@ class TauLeapSimulator(GillespieSimulator):
         # and that is whack
         # although I guess with this species partitioning, ... that's essentially defying what Cao proposed entirely, because y >= 1
 
-        # CAO AND GILLESPIE
-        with np.errstate(divide='ignore'):
-            tau1 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1) / np.abs(mu_hat_i))
-        tau2 = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1)**2 / np.abs(sigma_2_hat_i))
-        # THAYER
-        # should modify this so we don't get epsilon**2?
-        #tau1 = np.min(np.maximum(y * epsilon / g, epsilon) / np.abs(mu_hat_i))
-        #tau2 = np.min(np.maximum(y * epsilon / g, epsilon)**2 / np.abs(sigma_2_hat_i))
+        if do_inner_max:
+            # CAO AND GILLESPIE
+            with np.errstate(divide='ignore'):
+                tau_mu = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1) / np.abs(mu_hat_i))
+                tau_sigma = np.min(np.maximum(np.nan_to_num(y * epsilon / g, 0), 1)**2 / np.abs(sigma_2_hat_i))
+        else:
+            # THAYER
+            # should modify this so we don't get epsilon**2?
+            tau_mu = np.min((y * epsilon / g) / np.abs(mu_hat_i))
+            tau_sigma = np.min((y * epsilon / g)**2 / np.abs(sigma_2_hat_i))
 
-        return min(tau1, tau2)
+        return min(tau_mu, tau_sigma)
 
     @staticmethod
     def gp_tau_leap_proposal(y, epsilon, propensities, N, kinetic_order_matrix):
@@ -496,11 +500,12 @@ class TauLeapSimulator(GillespieSimulator):
                 tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, reaction_mask, t_end)
             else:
                 tau_prime = self.candidate_time(t, y, propensities, reaction_mask, t_end)
-            tau_prime = min(t_end - t, tau_prime)
 
-        if tau_prime < self.rejection_multiple / total_propensity:
-            # reject this step and switch to Gillespie's algorithm for a fixed # of steps
-            return Step(None, None, self.status_klass.rejected_for_gillespie)
+            if tau_prime < self.rejection_multiple / total_propensity:
+                # reject this step and switch to Gillespie's algorithm for a fixed # of steps
+                return Step(None, None, self.status_klass.rejected_for_gillespie)
+
+            tau_prime = min(t_end - t, tau_prime)
 
         if critical_sum == 0:
             tau_prime_prime = np.inf
@@ -577,6 +582,8 @@ class TauLeapSimulator(GillespieSimulator):
                 return Step(None, None, self.status_klass.rejected)
             status = self.status_klass.leap_critical_combined
 
+        if np.isclose(t+tau, t_end):
+            tau = t_end - t
         t_history, y_history = self.expand_step_with_t_eval(t,y,tau,update,t_eval,t_end)
 
         if pathway is not None:
