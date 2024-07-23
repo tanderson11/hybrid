@@ -496,10 +496,10 @@ class TauLeapSimulator(GillespieSimulator):
             # near equilibrium, which should NOT be used to determine the acceptable leap time
             if self.equilibrium_mask is not None and self.method == Method.implicit:
                 reaction_mask = reaction_mask & (~self.equilibrium_mask)
-            if self.inhomogeneous:
-                tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, reaction_mask, t_end)
-            else:
+            if self.time_handling == TimeHandling.homogeneous:
                 tau_prime = self.candidate_time(t, y, propensities, reaction_mask, t_end)
+            else:
+                tau_prime = self.candidate_time_inhomogeneous(t, y, propensities, reaction_mask, t_end)
 
             if tau_prime < self.rejection_multiple / total_propensity:
                 # reject this step and switch to Gillespie's algorithm for a fixed # of steps
