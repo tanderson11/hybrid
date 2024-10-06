@@ -574,7 +574,7 @@ class TauLeapSimulator(GillespieSimulator):
             tau = tau_prime_prime
             #print(tau)
             #if np.sum(critical_reactions) >= 1: import pudb; pudb.set_trace()
-            pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], self.Nplus[:, critical_reactions], self.Nminus[:, critical_reactions], propensities[critical_reactions], rng, poisson_products_mask=poisson_products_mask)
+            pathway, gillespie_update = self.gillespie_update_proposal(self.N[:, critical_reactions], propensities[critical_reactions], rng, poisson_products_mask=poisson_products_mask, Nplus=self.Nplus[:, critical_reactions], Nminus=self.Nminus[:, critical_reactions])
             tau_update = self.explicit_tau_update_proposal(self.N[:, ~critical_reactions], self.Nplus[:, ~critical_reactions], self.Nminus[:, ~critical_reactions], tau, propensities[~critical_reactions], rng)
             update = gillespie_update + tau_update
 

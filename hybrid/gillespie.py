@@ -1,6 +1,8 @@
 from enum import auto
+from typing import Callable, Union
 from dataclasses import dataclass
 import numpy as np
+from numpy.typing import ArrayLike
 from numba import jit as numbajit
 from scipy.integrate import quad
 from scipy.optimize import fsolve, least_squares
@@ -18,6 +20,25 @@ class GillespieOptions():
 
 class GillespieSimulator(Simulator):
     status_klass = GillespieStepStatus
+    def __init__(self, k: Union[ArrayLike, Callable],
+                 N: ArrayLike,
+                 kinetic_order_matrix: ArrayLike,
+                 poisson_products_mask: ArrayLike=None,
+                 discontinuities: ArrayLike=None,
+                 jit: bool=True,
+                 propensity_function: Callable=None,
+                 species_labels=None,
+                 pathway_labels=None,
+                 reaction_index_to_hooks=None
+                ) -> None:
+        super().__init__(k, N, kinetic_order_matrix, poisson_products_mask=poisson_products_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
+        self.reaction_index_to_hooks = reaction_index_to_hooks
+
+    @classmethod
+    def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
+        reaction_index_to_hooks = m.reaction_index_to_hooks if m.has_hooks else None
+        return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], reaction_index_to_hooks=reaction_index_to_hooks, jit=jit, **kwargs)
+
     def step(self, t, y, t_end, rng, t_eval):
         if self.inhomogeneous:
             return self.gillespie_step(t, y, t_end, rng, t_eval)
@@ -123,7 +144,7 @@ class GillespieSimulator(Simulator):
         return update
 
     @classmethod
-    def gillespie_update_proposal(cls, N, Nplus, Nminus, propensities, rng, poisson_products_mask=None):
+    def gillespie_update_proposal(cls, N, propensities, rng, poisson_products_mask=None, Nplus=None, Nminus=None):
         pathway = cls._pick_gillespie_pathway(propensities, rng)
         update = cls._gillespie_update(N, pathway)
         if poisson_products_mask is not None and poisson_products_mask[pathway]:
@@ -166,7 +187,13 @@ class GillespieSimulator(Simulator):
 
         endpoint_propensities = self.propensity_function(t+hitting_time, y)
 
-        pathway, update = self.gillespie_update_proposal(self.N, self.Nplus, self.Nminus, endpoint_propensities, rng, self.poisson_products_mask)
+        pathway, update = self.gillespie_update_proposal(self.N, endpoint_propensities, rng, self.poisson_products_mask, Nplus=self.Nplus, Nminus=self.Nminus)
+        hook = self.reaction_index_to_hooks.get(pathway, None)
+        if hook is not None:
+            assert self.poisson_products_mask is None
+            hook_pathway, hook_update = self.gillespie_update_proposal(hook.N, hook.p, rng)
+            update = update + hook_update
+
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, self.status_klass.stochastic, pathway=pathway)
@@ -181,7 +208,12 @@ class GillespieSimulator(Simulator):
             update = np.zeros_like(y)
             return Step(*self.expand_step_with_t_eval(t,y,t_end-t,update,t_eval,t_end), self.status_klass.t_end)
 
-        pathway, update = self.gillespie_update_proposal(self.N, self.Nplus, self.Nminus, propensities, rng, self.poisson_products_mask)
+        pathway, update = self.gillespie_update_proposal(self.N, propensities, rng, self.poisson_products_mask, Nplus=self.Nplus, Nminus=self.Nminus)
+        hook = self.reaction_index_to_hooks.get(pathway, None)
+        if hook is not None:
+            assert self.poisson_products_mask is None
+            hook_pathway, hook_update = self.gillespie_update_proposal(hook.N, hook.p, rng)
+            update = update + hook_update
         t_history, y_history = self.expand_step_with_t_eval(t,y,hitting_time,update,t_eval,t_end)
 
         return Step(t_history, y_history, self.status_klass.stochastic, pathway)
