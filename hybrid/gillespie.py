@@ -36,7 +36,7 @@ class GillespieSimulator(Simulator):
 
     @classmethod
     def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
-        reaction_index_to_hooks = m.reaction_index_to_hooks if m.has_hooks else None
+        reaction_index_to_hooks = m.get_hooks(parameters=parameters) if m.has_hooks else None
         return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], reaction_index_to_hooks=reaction_index_to_hooks, jit=jit, **kwargs)
 
     def step(self, t, y, t_end, rng, t_eval):

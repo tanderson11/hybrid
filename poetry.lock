@@ -2885,7 +2885,7 @@ simpleeval = "^0.9.13"
 type = "git"
 url = "https://github.com/tanderson11/reactionmodel.git"
 reference = "HEAD"
-resolved_reference = "feee11dd4043b75a65a3fe35d48ac6301ef64b16"
+resolved_reference = "be5c35e218e7426e2dc9829e8ae2a8265c018af5"
 
 [[package]]
 name = "referencing"
