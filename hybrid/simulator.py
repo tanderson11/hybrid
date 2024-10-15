@@ -67,14 +67,14 @@ class Run():
 
         self.step_indices = np.zeros(history_length)
         self.status_history = np.zeros(history_length)
-        self.pathway_history = np.zeros(history_length)
+        self.pathway_history = np.zeros(history_length, dtype=int)
 
         self.status_counter = Counter({})
 
         self.t_history[0]    = t0
         self.y_history[:, 0] = y0
         self.status_history[0] = None
-        self.pathway_history[0] = np.inf
+        self.pathway_history[0] = -1
 
     def get_t(self):
         return self.t_history[self.history_index]
@@ -136,7 +136,7 @@ class Step(NamedTuple):
     t_history: ArrayLike
     y_history: ArrayLike
     status: StepStatus
-    pathway: int = np.inf
+    pathway: int = -1
 
 class Simulator(ABC):
     run_klass = Run

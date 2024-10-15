@@ -26,7 +26,7 @@ class HybridStepStatus(StepStatus):
     def event_like(self):
         return self > self.t_end
 
-CONTRIVED_PATHWAY = -1
+CONTRIVED_PATHWAY = -2
 
 class Step(NamedTuple):
     t_history: np.ndarray
