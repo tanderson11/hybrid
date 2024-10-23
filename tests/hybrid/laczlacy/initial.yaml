@@ -1,22 +1,22 @@
 initial_condition:
-  LacY: 831
-  LacZ: 1180
-  LacZlactose: 30
-  PLac: 1
-  PLacRNAP: 0
+  LacY: 1843
+  LacZ: 2070
+  LacZlactose: 59
+  PLac: 0
+  PLacRNAP: 1
   RbsLacY: 0
   RbsLacZ: 0
-  RbsRibosomeLacY: 29
-  RbsRibosomeLacZ: 39
+  RbsRibosomeLacY: 33
+  RbsRibosomeLacZ: 44
   TrLacY1: 0
-  TrLacY2: 2
+  TrLacY2: 3
   TrLacZ1: 0
-  TrLacZ2: 19
-  TrRbsLacY: 282
-  TrRbsLacZ: 802
-  dgrLacY: 3
-  dgrLacZ: 4
-  dgrRbsLacY: 11
-  dgrRbsLacZ: 20
-  lactose: 98975
-  product: 466867
+  TrLacZ2: 18
+  TrRbsLacY: 330
+  TrRbsLacZ: 918
+  dgrLacY: 12
+  dgrLacZ: 16
+  dgrRbsLacY: 29
+  dgrRbsLacZ: 36
+  lactose: 130145
+  product: 2158601

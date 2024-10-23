@@ -32,7 +32,10 @@ class GillespieSimulator(Simulator):
                  reaction_index_to_hooks=None
                 ) -> None:
         super().__init__(k, N, kinetic_order_matrix, poisson_products_mask=poisson_products_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
-        self.reaction_index_to_hooks = reaction_index_to_hooks
+        if reaction_index_to_hooks is None:
+            self.reaction_index_to_hooks = {}
+        else:
+            self.reaction_index_to_hooks = reaction_index_to_hooks
 
     @classmethod
     def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):

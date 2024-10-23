@@ -25,11 +25,11 @@ parameters:
   pAIR: 0.2 # probability imported acute infection is drug resistant
   p_low_a: 0.0 # probability imported case has low absolute abundance of commensals
   p_low_d: 0.0 # probability imported case has low commensal diversity
-  p_col: 0.8 # probability imported case has colonization of either DS or DR
+  p_col: 0.2 # probability imported case has colonization of either DS or DR
   pA_IS_R: 0.1 # probability imported DS infection has R colonization
   pA_IR_S: 0.1 # probability imported DR infection has S colonization
-  f_S: 0.95 # fraction of imported colonizations that are S
-  f_R: 0.05 # fraction of imported colonizations that are R
+  f_S: 0.80 # fraction of imported colonizations that are S
+  f_R: 0.20 # fraction of imported colonizations that are R
   f_dual: 0.0 # fraction of imported colonizations that are dual
 
   g0: 1.0 # commensal background repopulates to high abundance
@@ -38,17 +38,17 @@ parameters:
   g:  0.0 # commensals in niche repopulates to high abundance
   gamma: 0.0 # restoration of commensals in niche to high abundance (P in main)
 
-  l: 0.1 # overgrowth of pathogenic bacteria in niche (X in main)
+  l: 0.05 # overgrowth of pathogenic bacteria in niche (X in main)
   # setting to 0 to prefer to think about spontaneous disruption rather than spontaneous infection
   lam: 0.0 # overgrowth of pathogenic bacteria in niche (M in main) (reasonable guess := r_beta_C * l)
 
   theta: 0.01 # spontaneous disruption of high abundance
   theta_N: 0.001 # spontaneous disruption of niche
 
-  w: 0.001 # absolute rate of competition within niche
+  w: 0.01 # absolute rate of competition within niche
   # setting these to 1000 to effectively eliminate all but DS/DR states
-  rWM: 10000.0 # relative competition rate between commensals and non commensals
-  rWX: 10000.0 # relative competition rate between [] and X
+  rWM: 1000.0 # relative competition rate between commensals and non commensals
+  rWX: 1000.0 # relative competition rate between [] and X
   dWN: 0 # decrease in competition strength from the disfavored niche half
   dWR: 0 # decrease in competition strength for R
   
@@ -64,7 +64,7 @@ parameters:
   tau_0: 0.10
   tau: 1.0 # detection+treatment rate for infected individuals
   pEN: 0.5 # probability treatment affects the niche at all
-  pDenovo: 1.0 # probability treatment produces denovo niche production of resistant pathogenic bacteria in niche
+  pDenovo: 0.05 # probability treatment produces denovo niche production of resistant pathogenic bacteria
   eDS: 1.0 # treatment efficacy against DS
   eM:  1.0 # treatment efficacy against M
   eDR: 0.0 # treatment efficacy against DR

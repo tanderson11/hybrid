@@ -22,5 +22,5 @@ class SimulationAwareModel(Model):
         return poisson_products_mask
 
     @classmethod
-    def from_dict(cls, dictionary, functions_by_name=None, species_class=Species, reaction_class=SimulationAwareReaction, reaction_rate_family_class=ReactionRateFamily):
+    def from_dict(cls, dictionary, functions_by_name=None, species_class=Species, reaction_class=SimulationAwareReaction, reaction_rate_family_class=ReactionRateFamily, triggered_sets=None):
         return super().from_dict(dictionary, functions_by_name, species_class=species_class, reaction_class=reaction_class, reaction_rate_family_class=reaction_rate_family_class)

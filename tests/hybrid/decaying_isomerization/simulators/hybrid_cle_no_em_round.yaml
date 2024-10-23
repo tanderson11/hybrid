@@ -1,0 +1,5 @@
+simulator_config:
+  name: hybrid_n_cle_contrived
+  overrides:
+    options:
+      euler_maruyama_round: no_rounding

@@ -26,6 +26,7 @@ class HybridStepStatus(StepStatus):
     def event_like(self):
         return self > self.t_end
 
+NO_PATHWAY = -3
 CONTRIVED_PATHWAY = -2
 
 class Step(NamedTuple):
@@ -33,7 +34,7 @@ class Step(NamedTuple):
     y_history: np.ndarray
     status: HybridStepStatus
     nfev: int
-    pathway: int = np.inf
+    pathway: int = 0
 
 @dataclass
 class PartitionScheme():
@@ -301,7 +302,7 @@ class HybridSimulator(Simulator):
         return jit_calculate_propensities
 
     def euler_maruyama_integrate(self, t_span, y, partition, rng, **kwargs):
-        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.round)
+        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.euler_maruyama_round)
 
     def solve_ivp_integrate(self, t_span, y, **kwargs):
         # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
@@ -447,14 +448,14 @@ class HybridSimulator(Simulator):
         # if we reached the true upper limit of integration simply return the current values of t and y
         if status == self.status_klass.t_end:
             ## FIRST RETURN
-            return Step(t_history, y_history, status, step_solved.nfev)
+            return Step(t_history, y_history, status, step_solved.nfev, pathway=NO_PATHWAY)
 
         assert self.status_klass.event_like(status)
 
         # if the event isn't a stochastic event, then we were halting to reassess partition
         # so: we simply return the state of the system at the time of our event
         if not status == self.status_klass.stochastic_event:
-            return Step(t_history, y_history, status, step_solved.nfev)
+            return Step(t_history, y_history, status, step_solved.nfev, pathway=NO_PATHWAY)
         assert status == self.status_klass.stochastic_event
 
         # if the event was a stochastic event, cause it to happen
@@ -551,7 +552,8 @@ class HybridSimulationOptions():
     round: str = 'randomly'
     halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = None
-    euler_maruyama_timestep: float = 0.01
+    euler_maruyama_timestep: float = 2e-4
+    euler_maruyama_round: str = None
 
     def __post_init__(self):
         round = util.RoundingMethod(self.round)
@@ -566,6 +568,9 @@ class HybridSimulationOptions():
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
+        
+        if self.euler_maruyama_round is None:
+            object.__setattr__(self, 'euler_maruyama_round', self.round)
 
 def canonicalize_event(t_events, y_events):
     """For a set of integration events, ensure our expectations are met and return the event.

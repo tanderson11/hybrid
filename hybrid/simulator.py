@@ -268,6 +268,8 @@ class Simulator(ABC):
             `t_history` and `y_history` (all time and states evaluated), and `status_counter`,
             which records the kinds of termination that occurred during each step of simulation.
         """
+        if isinstance(y0, dict):
+            raise ValueError(f"y0 should be an Array or array-like (e.g. list). Not {type(y0)}")
         y0 = np.asarray(y0)
 
         if (y0.round() != y0).any():
