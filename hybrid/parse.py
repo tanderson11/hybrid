@@ -85,6 +85,9 @@ class SimulatorFactory(ConfigParser):
         self_dict.pop('description')
         options = self_dict.pop('options')
 
+        #if 'euler_maruyama_timestep' in options.keys():
+        #    import pdb; pdb.set_trace()
+
         return self.simulator_klass.from_model(model, *args, **kwargs, **self_dict, **options)
 
 @dataclass

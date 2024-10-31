@@ -100,12 +100,11 @@ def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None
     # round to stoichiometrically realizable change:
     # this prevents pathways in equilibrium from randomly walking (due to random rounding)
     # (recall: random rounding is necessary to prevent consistent windfalls/shortfalls in small time steps from biasing simulator)
-    if round:
-        Nplus  = N * (N>0)
-        Nminus = N * (N<0)
-        firings = util.round_with_method(total_firings, rounding_method, rng)
-        update = _get_update(N, Nplus, Nminus, firings, rng, poisson_products_mask=poisson_products_mask)
-        y_history[:, -1] = y0 + update
+    Nplus  = N * (N>0)
+    Nminus = N * (N<0)
+    firings = util.round_with_method(total_firings, rounding_method, rng)
+    update = _get_update(N, Nplus, Nminus, firings, rng, poisson_products_mask=poisson_products_mask)
+    y_history[:, -1] = y0 + update
 
     result = EMResult(
         t_history,

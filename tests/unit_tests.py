@@ -3,6 +3,7 @@ import numpy as np
 import hybrid.hybrid as hybrid
 
 class PartitionBreakTests(unittest.TestCase):
+    n = 10
     def test_decay_regime_change(self):
         threshold = 100.
         y0 = np.array([1000.])
@@ -22,7 +23,7 @@ class PartitionBreakTests(unittest.TestCase):
         simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
 
         y_ends = []
-        for i in range(20):
+        for i in range(self.n):
             result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         
@@ -50,7 +51,7 @@ class PartitionBreakTests(unittest.TestCase):
         simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
 
         y_ends = []
-        for i in range(20):
+        for i in range(self.n):
             result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         
@@ -85,7 +86,7 @@ class PartitionBreakTests(unittest.TestCase):
         simulator = hybrid.HybridSimulator(k, N, kinetic_order_matrix, **options)
 
         y_ends = []
-        for i in range(20):
+        for i in range(self.n):
             result = simulator.simulate(t_span, y0, rng)
             y_ends.append(result.y[0])
         

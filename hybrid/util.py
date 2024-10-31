@@ -9,7 +9,7 @@ class RoundingMethod(enum.Enum):
 def round_with_method(y, rounding_method, rng=None):
     """Round the state vector `y` either conventionally or randomly."""
     rounding_method = RoundingMethod(rounding_method)
-    if round_with_method == RoundingMethod.no_rounding:
+    if rounding_method == RoundingMethod.no_rounding:
         return y
     elif rounding_method == RoundingMethod.randomly:
         return round_randomly(y, rng)
