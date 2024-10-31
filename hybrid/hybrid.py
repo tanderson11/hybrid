@@ -302,7 +302,7 @@ class HybridSimulator(Simulator):
         return jit_calculate_propensities
 
     def euler_maruyama_integrate(self, t_span, y, partition, rng, **kwargs):
-        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.euler_maruyama_round)
+        return em_solve_ivp(self.N, self.propensity_function, partition, t_span, y, rng, **kwargs, dt=self.simulation_options.euler_maruyama_timestep, rounding_method=self.simulation_options.round, round_stoichiometrically=self.simulation_options.euler_maruyama_round_stoichiometrically)
 
     def solve_ivp_integrate(self, t_span, y, **kwargs):
         # we have an extra entry in our state vector to carry the integral of the rates of stochastic events, which dictates when an event fires
@@ -553,7 +553,7 @@ class HybridSimulationOptions():
     halt_on_partition_change: bool = False
     partition_fraction_for_halt: float = None
     euler_maruyama_timestep: float = 2e-4
-    euler_maruyama_round: str = None
+    euler_maruyama_round_stoichiometrically: bool = True
 
     def __post_init__(self):
         round = util.RoundingMethod(self.round)
@@ -568,9 +568,6 @@ class HybridSimulationOptions():
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
-        
-        if self.euler_maruyama_round is None:
-            object.__setattr__(self, 'euler_maruyama_round', self.round)
 
 def canonicalize_event(t_events, y_events):
     """For a set of integration events, ensure our expectations are met and return the event.

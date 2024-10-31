@@ -36,7 +36,7 @@ def _get_update(N, Nplus, Nminus, firings, rng, poisson_products_mask):
     update += Nminus @ firings
     return update
 
-def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None, events=None, args=None, dt=0.005, poisson_products_mask=None, rounding_method='randomly'):
+def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None, events=None, args=None, dt=0.005, poisson_products_mask=None, rounding_method='randomly', round_stoichiometrically=True):
     assert events is None or len(events) == 0
     if args is None: args = ()
 
@@ -102,8 +102,12 @@ def em_solve_ivp(N, propensity_function, partition, t_span, y0, rng, t_eval=None
     # (recall: random rounding is necessary to prevent consistent windfalls/shortfalls in small time steps from biasing simulator)
     Nplus  = N * (N>0)
     Nminus = N * (N<0)
-    firings = util.round_with_method(total_firings, rounding_method, rng)
-    update = _get_update(N, Nplus, Nminus, firings, rng, poisson_products_mask=poisson_products_mask)
+    if round_stoichiometrically:
+        firings = util.round_with_method(total_firings, rounding_method, rng)
+        update = _get_update(N, Nplus, Nminus, firings, rng, poisson_products_mask=poisson_products_mask)
+    else:
+        update = _get_update(N, Nplus, Nminus, total_firings, rng, poisson_products_mask=poisson_products_mask)
+        update = util.round_with_method(update, rounding_method, rng)
     y_history[:, -1] = y0 + update
 
     result = EMResult(
