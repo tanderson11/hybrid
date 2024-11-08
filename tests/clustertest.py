@@ -14,11 +14,13 @@ if __name__ == '__main__':
     i = args.test
     print("I", i)
     suite = unittest.TestLoader().loadTestsFromTestCase(suites[args.suite])
+
     if args.filterregex is not None:
         pattern = re.compile(args.filterregex)
         tests = [t for t in suite if re.match(pattern, t.id())]
-    suite_list = list(suite)
+    else:
+        tests = list(suite)
     runner = unittest.TextTestRunner()
-    print(suite_list[i])
-    runner.run(suite_list[i])
+    print(tests[i])
+    runner.run(tests[i])
 
