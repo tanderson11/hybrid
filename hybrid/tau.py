@@ -20,6 +20,7 @@ class Method(Enum):
 class TimeHandling(Enum):
     homogeneous = 'homogeneous'
     inhomogeneous_monotonic = 'inhomogeneous_monotonic'
+    inhomogeneous_monotonic_homogeneous_gillespie = 'inhomogeneous_monotonic_homogeneous_gillespie'
 
 class TauLeapers(Enum):
     gp = 'gp'
@@ -143,7 +144,7 @@ class TauLeapSimulator(GillespieSimulator):
         return critical
 
     def gillespie_step_wrapper(self, t, y, t_end, rng, t_eval):
-        if self.time_handling == TimeHandling.inhomogeneous_monotonic:
+        if self.time_handling == TimeHandling.inhomogeneous_monotonic: # if inhomogeneous_monotonic with homogeneous gillespie step, we still default to the faster step
             g_step = self.gillespie_step(t, y, t_end, rng, t_eval)
         else:
             g_step = self.homogeneous_gillespie_step(t, y, t_end, rng, t_eval)
@@ -302,15 +303,6 @@ class TauLeapSimulator(GillespieSimulator):
         # calculate g vector (if it depends on y) or use constant g vector
         g = g(y) if not isinstance(g, np.ndarray) else g
 
-        # Currently, I disagree with Cao and Gillespie: I believe that it should be a max of y*epsilon/g and EPSILON
-        # it's unfair in one branch insist that the propensity changes by no more than epsilon of its total value
-        # and in the other branch insist that it changes by no more than potentially 100% of its value! when we make our leap
-        # we're quite likely in that regime to have multiple reactions to fire, but the whole point of having this maximum here
-        # is to say "hey, the reaction will change by at LEAST 1 discrete firing, so let's not insist on a time step that is super ultra tiny"
-        # but by choosing this 1/|mu_hat_i|, we're saying "hey it changes by at LEAST 1 firing, so let's let it change by 1,2,or3ish firings"
-        # and that is whack
-        # although I guess with this species partitioning, ... that's essentially defying what Cao proposed entirely, because y >= 1
-
         if do_inner_max:
             # CAO AND GILLESPIE
             with np.errstate(divide='ignore'):
@@ -325,35 +317,9 @@ class TauLeapSimulator(GillespieSimulator):
         return min(tau_mu, tau_sigma)
 
     @staticmethod
-    def gp_tau_leap_proposal(y, epsilon, propensities, N, kinetic_order_matrix):
-        assert False, "Haven't carefully checked if the right thing happens with division by 0"
-        # equations 1-3 in Cao et al. 2005, which are really drawn from Gillespie and Petzold 2003
-        # we will approximate the rate laws as if they were exponentiation rather than binomials
-
-        # we're trying to divide each column of kinetic_order by y
-        # and multiply each row by the propensities. That gives da_j / dx_i
-        # j = rows, j prime = columns
-        # since numpy's default way of multiplying, say, a (3,2) by a (2,)
-        # is to adjudicate along the rows, then we first multiply by propensities
-        # then transpose and divide by y (so that y is divided along columns)
-        f_jjp = (((kinetic_order_matrix * propensities).T / y) @ N)
-
-        # want to multiply and sum along the rows
-        mu_j = np.sum(f_jjp * propensities, axis=1)
-        sigma_2_j = np.sum(f_jjp**2 * propensities, axis=1)
-
-        total_propensity = np.sum(propensities)
-
-        tau1 = np.min(epsilon * total_propensity / np.abs(mu_j)) # min'd over j
-        tau2 = np.min(epsilon**2 * total_propensity**2 / sigma_2_j) # min'd over j
-        tau = min(tau1, tau2)
-
-        return tau
-
-    @staticmethod
     def corrected_tau_leap_proposal(y, epsilon, propensities, k_vec, N, kinetic_order_matrix):
         """Propose an extent of time tau to leap forward that ensures no propensity changes by more than epsilon relative to itself. Cao et al. 2006."""
-        assert False, "Haven't carefully checked if the right thing happens with division by 0"
+        assert False, "Haven't carefully checked if the right thing happens with division by 0. Use species_tau_leap_proposal instead."
 
         # see notes under gp_tau_leap_proposal to understand who is transposed and why
         # [derivative is 0 w.r.t any species coordinate that is currently 0]
@@ -510,7 +476,7 @@ class TauLeapSimulator(GillespieSimulator):
         if critical_sum == 0:
             tau_prime_prime = np.inf
         else:
-            if self.time_handling == TimeHandling.inhomogeneous_monotonic:
+            if self.time_handling == TimeHandling.inhomogeneous_monotonic or self.time_handling == TimeHandling.inhomogeneous_monotonic_homogeneous_gillespie:
                 # we desperately want to avoid the tragedy of calculating the integral for the hitting time
                 # so we exploit monotonicity to ask how quickly could the next critical reaction firing happen
                 # if, even at its fastest occurrence, it would not happen before our proposed leap,

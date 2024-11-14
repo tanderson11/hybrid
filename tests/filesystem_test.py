@@ -29,7 +29,14 @@ class TestSpec(unittest.TestCase):
     # wherever we are, save test output to test_output folder
     test_out = './test_output/'
     reaction_to_k = None
-    n = 10000
+    n = 1
+    runner_id = ''
+
+    def set_n(self, n):
+        self.n = n
+
+    def set_runner_id(self, runner_id):
+        self.runner_id = runner_id
 
     # subclasses must define _test_single()
 
@@ -52,7 +59,7 @@ class TestSpec(unittest.TestCase):
         return processed_results
 
     def tearDown(self):
-        self.out = os.path.join(self.test_out, self.test_name)
+        self.out = os.path.join(self.test_out, self.test_name + str(self.runner_id))
         pathlib.Path(self.out).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(self.out, 'time.txt'), 'w') as f:
             f.write(str(self.elapsed_time))

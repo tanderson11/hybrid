@@ -20,5 +20,5 @@ echo $SLURM_ARRAY_JOB_ID
 echo $SLURM_ARRAY_TASK_ID
 pwd
 #poetry run which python
-poetry run python -u clustertest.py $TEST_SUITE $SLURM_ARRAY_TASK_ID --filterregex $TEST_FILTER
+poetry run python -u clustertest.py $TEST_SUITE $SLURM_ARRAY_TASK_ID --filterregex $TEST_FILTER --trials $TEST_TRIALS --runnerid $TEST_RUNNER_ID
 echo "Finished with job $SLURM_JOBID"
