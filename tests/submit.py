@@ -27,13 +27,13 @@ if __name__ == '__main__':
     env = os.environ.copy()
     env['TEST_SUITE'] = args.suite
     env['TEST_FILTER'] = args.filterregex
-    env['TEST_TRIALS'] = args.trials // args.runners
+    env['TEST_TRIALS'] = str(args.trials // args.runners)
 
     for runner in range(args.runners):
         job_name = args.suite
         if args.runners != 1:
             job_name += f'runner{runner}'
-        env['TEST_RUNNER_ID'] = runner
+        env['TEST_RUNNER_ID'] = str(runner)
 
         subprocess.run(
             shlex.split(f'sbatch -o {args.suite}-%A_%a.out --array=0-{ntests-1}%{args.maxjobs} --job-name={job_name} --time={args.time}:0:0 --mem={args.memory}G submit.sh'),
