@@ -537,7 +537,7 @@ class HybridSimulationOptions():
             Defaults to 'randomly'.
         halt_on_partition_change (bool, optional):
             if True, stop integration when the change in state causes a deterministic
-            reaction to enter the stochastic regime. If False, don't. When  Defaults to True.
+            reaction to enter the stochastic regime. If False, don't. When  Defaults to False.
         partition_fraction_for_halt (float, optional):
             float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``

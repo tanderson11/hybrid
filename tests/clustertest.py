@@ -16,6 +16,7 @@ if __name__ == '__main__':
     i = args.test
     print("I", i)
     suite = unittest.TestLoader().loadTestsFromTestCase(suites[args.suite])
+    print([t.id() for t in suite])
     if args.filterregex is not None:
         pattern = re.compile(args.filterregex)
         tests = [t for t in suite if re.match(pattern, t.id())]

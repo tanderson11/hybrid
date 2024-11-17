@@ -40,6 +40,8 @@ class History():
     pathway_history: ArrayLike
     status_counter: Counter
     pathway_counter: Counter
+    step_t_history: ArrayLike
+    step_y_history: ArrayLike
 
     def plot(self, legend, ax=None, **plot_kwargs):
         import matplotlib.pyplot as plt
@@ -68,6 +70,8 @@ class Run():
         self.step_indices = np.zeros(history_length)
         self.status_history = np.zeros(history_length)
         self.pathway_history = np.zeros(history_length, dtype=int)
+        self.step_t_history = np.zeros(history_length)
+        self.step_y_history = np.zeros((y0.shape[0], history_length))
 
         self.status_counter = Counter({})
 
@@ -103,6 +107,8 @@ class Run():
         self.status_history[self.step_index+1] = step.status
         self.pathway_history[self.step_index+1] = step.pathway
         self.step_indices[self.step_index+1] = self.history_index
+        self.step_t_history[self.step_index+1] = step.t_history[-1]
+        self.step_y_history[:, self.step_index+1] = step.y_history[:, -1]
         self.step_index += 1
 
         if (self.get_y() < 0).any():
@@ -117,7 +123,9 @@ class Run():
         step_indices = self.step_indices[:self.step_index+1]
         status_history = self.status_history[:self.step_index+1]
         pathway_history = self.pathway_history[:self.step_index+1]
-        return History(self.get_t(), self.get_y(), t_history, y_history, step_indices, status_history, pathway_history, self.status_counter, Counter(pathway_history))
+        step_t_history = self.step_t_history[:self.step_index+1]
+        step_y_history = self.step_y_history[:, :self.step_index+1]
+        return History(self.get_t(), self.get_y(), t_history, y_history, step_indices, status_history, pathway_history, self.status_counter, Counter(pathway_history), step_t_history, step_y_history)
 
     def get_step_kwargs(self):
         return {}

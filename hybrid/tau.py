@@ -213,6 +213,8 @@ class TauLeapSimulator(GillespieSimulator):
             return non_zero_end_propensities
 
         def calculate_largest_fraction_change(nonzero_end_propensities):
+            if not nonzero_end_propensities.any():
+                return 1.0
             return np.max(np.abs((nonzero_propensities - nonzero_end_propensities)/nonzero_propensities))
 
         # if the change at the endpoint doesn't break our tolerance, then accept the maximum time jump
