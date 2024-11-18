@@ -55,6 +55,7 @@ class FixedThresholdPartitioner(PartitionScheme):
 
 @dataclass
 class NThresholdPartitioner(PartitionScheme):
+    """NThresholdPartitioner takes a threshold parameter and partitions a reaction into the slow scale if any of its reactants/products have fewer specimens than the threshold."""
     threshold: float
     ignore_catalysts: bool = True
     divide_by_stoichiometry: bool = True
@@ -128,7 +129,25 @@ def partition_change_finder_factory(partition_fraction_for_halt):
 
 class HybridSimulator(Simulator):
     status_klass = HybridStepStatus
-    def __init__(self, k: Union[Callable, ArrayLike], N: ArrayLike, kinetic_order_matrix: ArrayLike, partition_function: Union[Callable, PartitionScheme], poisson_products_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, dydt_function: Callable=None, species_labels=None, pathway_labels=None, **kwargs) -> None:
+    def __init__(
+            self,
+            k: Union[Callable, ArrayLike],
+            N: ArrayLike,
+            kinetic_order_matrix: ArrayLike,
+            partition_function: Union[Callable, PartitionScheme],
+            poisson_products_mask: ArrayLike=None,
+            discontinuities: ArrayLike=None,
+            jit: bool=True,
+            propensity_function: Callable=None,
+            dydt_function: Callable=None,
+            species_labels: list=None,
+            pathway_labels: list=None,
+            round: str='randomly',
+            halt_on_partition_change: bool=False,
+            partition_fraction_for_halt: float=None,
+            euler_maruyama_timestep: float=2e-4,
+            euler_maruyama_round_stoichiometrically: bool=True,
+        ) -> None:
         """Initialize a Haseltine Rawlings simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
 
         Parameters
@@ -138,29 +157,64 @@ class HybridSimulator(Simulator):
         N : ArrayLike
             The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
         kinetic_order_matrix : ArrayLike
-            The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
+            The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in rate law of reaction j.
         partition_function : Callable | PartitionScheme
-            A function p(propensities) that returns a Partition object with attributes `deterministic`
-            (a mask for which pathways to consider as deterministic), `stochastic` (a mask for which pathways
-            to consider as stochastic), and `propensity_thresholds` (the value that each propensity was compared to
-            in order to partition it). In the original Haseltine-Rawlings algorithm, this function compares
-            each propensity to the fixed threshold of `100.0` events per unit time. To retrieve this behavior,
-            pass the object `FixedThresholdPartitioner(100.0)`.
+            A function p(N, kinetic_order_matrix, y, propensities) that returns a Partition object with attributes
+            `deterministic` (a boolean array that takes value True for each pathway to consider as deterministic),
+            `stochastic` (a mask for which pathways to consider as stochastic), and `propensity_thresholds`
+            (the value that each propensity was compared to in order to partition it).
+
+            For recommended behavior, pass the object `NThresholdPartitioner(100.0)`
+            
+            In the original Haseltine-Rawlings algorithm, this function compares each propensity to the fixed threshold of `100.0` events per unit time.
+            To retrieve this behavior, pass the object `FixedThresholdPartitioner(100.0)`.
+        poisson_products_mask:
+            A feature in development that is not fully supported yet.
         discontinuities : ArrayLike, optional
             A vector of time points that correspond to discontinuities in the function k(t). Providing these points
-            while allow the simulator to avoid integrating over a discontinuity, by default None.
+            will prevent the simulator from integrating over a discontinuity, by default None.
         jit : bool, optional
-            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation helper functions, by default True.
+            If True, use numba.jit(nopython=True) to construct a low level callable (i.e. faster) version of simulation helper functions. 
+            Requires `numba` package to be installed. Defaults to True.
         propensity_function : Callable or None, optional
             If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
-            Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
+            Specify this if you have a special, fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
         dydt_function : Callable, optional
             If not None, use the specified function a_ij(t,y) to calculate the derivative of the system at time t and state y.
-            Specify this if there is a fast means of calculating the derivative, by default None.
+            Specify this if there is a fast or unusual method for calculating the derivative, by default None.
         species_labels : List[str] or None, optional
             A set of strings that matches the shape of y and provides human readable information detailing the system's species. By default None.
         pathway_labels : List[str] or None, optional
             A set of strings that matches the shape of k and provides human readable information detailing the system's reactions. By default None.
+        approximate_rtot (bool, optional):
+            if True, approximate the total of stochastic propensities as constant
+            between stochastic events (see discussion in IV of Haseltine and
+            Rawlings paper). If True, contrived_no_reaction_rate must be specified.
+            Defaults to False.
+        contrived_no_reaction_rate (float, optional):
+            a contrived rate of no reaction to ensure that no timestep between stochastic
+            events becomes too large. Must be specified if approximate_rtot is True. Defaults to None.
+        fast_scale (str, optional):
+            if 'deterministic', approximate the fast reactions as differential equations.
+            If 'langevin', treat the fast reactions as Langevin equations. Defaults to 'deterministic'.
+        round (str, optional):
+            if 'randomly', round species quantities randomly in proportion to decimal
+            (so 1.8 copies of X becomes 2 with 80% probability), if 'conventionally, round conventionally,
+            if 'no_rounding', do not round species quantities (this is not recommended).
+            Defaults to 'randomly'.
+        halt_on_partition_change (bool, optional):
+            if True, stop integration when the change in state causes a deterministic
+            reaction to enter the stochastic regime. If False, don't. When  Defaults to False.
+        partition_fraction_for_halt (float, optional):
+            float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
+            is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
+            This avoids numerical instability around the threshold. Defaults to None. Recommended value ~0.9.
+        euler_maruyama_timestep (float, optional):
+            finite timestep to use for integration of the Chemical Langevin equations.
+            relevant only if fast_scale is set to 'langevin.' Defaults to 2e-4.
+        euler_maruyama_round_stoichiometrically (bool, optional):
+            if True, only allow stoichiometrically realizable states in integration
+            of the Chemical Langevin equation. Defaults to True.
         **kwargs : HybridSimulationOptions
             A valid selection of options specific to the Haseltine-Rawlings hybrid simulation algorithm.
             To see documentation of each option, inspect the class HybridSimulationOptions.
@@ -176,7 +230,13 @@ class HybridSimulator(Simulator):
         if isinstance(partition_function, PartitionScheme):
             partition_function = partition_function.partition_function
         self.partition_function = partition_function
-        self.simulation_options = HybridSimulationOptions(**kwargs)
+        self.simulation_options = HybridSimulationOptions(
+            round=round,
+            halt_on_partition_change=halt_on_partition_change,
+            partition_fraction_for_halt=partition_fraction_for_halt,
+            euler_maruyama_timestep=euler_maruyama_timestep,
+            euler_maruyama_round_stoichiometrically=euler_maruyama_round_stoichiometrically
+        )
         if dydt_function is None:
             self.dydt = self.construct_dydt_function(N, jit)
         else:
@@ -515,10 +575,6 @@ class HybridSimulationOptions():
 
     Attributes
     ----------
-        jit (bool, optional):
-            whether to insist that propensities, derivatives, and rate constants
-            are calculated using Numba jit compiled functions
-            (faster but tedious to write). Defaults to True.
         approximate_rtot (bool, optional):
             if True, approximate the total of stochastic propensities as constant
             between stochastic events (see discussion in IV of Haseltine and
@@ -541,10 +597,13 @@ class HybridSimulationOptions():
         partition_fraction_for_halt (float, optional):
             float < 1. Only relevant if ``halt_on_partition_change``, in which case integration
             is stopped when the rate of a reaction reaches ``partition_fraction_for_halt * threshold``
-            This avoids numerical instability around the threshold. Defaults to None.
+            This avoids numerical instability around the threshold. Defaults to None. Recommended value ~0.9.
         euler_maruyama_timestep (float, optional):
             finite timestep to use for integration of the Chemical Langevin equations.
-            relevant only if fast_scale is set to 'langevin.' Defaults to 0.001.
+            relevant only if fast_scale is set to 'langevin.' Defaults to 2e-4.
+        euler_maruyama_round_stoichiometrically (bool, optional):
+            if True, only allow stoichiometrically realizable states in integration
+            of the Chemical Langevin equation. Defaults to True.
     """
     approximate_rtot: bool = False
     contrived_no_reaction_rate: float = None
@@ -559,6 +618,8 @@ class HybridSimulationOptions():
         round = util.RoundingMethod(self.round)
         if round == util.RoundingMethod.no_rounding:
             print("WARNING: rounding is turned off. This may cause undesireable behavior with consistent windfalls or shortfalls. Is this a test?")
+        elif round == util.RoundingMethod.contentionally:
+            print("WARNING: rounding method is conventional (deterministic). This may cause undesireable behavior with consistent windfalls or shortfalls. Is this a test?")
         fast_method = FastScaleMethods(self.fast_scale)
         if fast_method == FastScaleMethods.langevin:
             assert self.approximate_rtot, 'when integrating using the Euler-Maruyama method, propensities must be approximated as constant within a step'
@@ -568,6 +629,8 @@ class HybridSimulationOptions():
 
         if self.halt_on_partition_change:
             assert isinstance(self.partition_fraction_for_halt, float)
+        elif not self.contrived_no_reaction_rate:
+            print("WARNING: Halting on partition changes is disabled but no contrived rate of reaction is specified. This can cause integration to continue past the point when reactions should switch partition. To enable halting set `halt_on_partition_change` while using the following scipy fork: https://github.com/tanderson11/scipy")
 
 def canonicalize_event(t_events, y_events):
     """For a set of integration events, ensure our expectations are met and return the event.

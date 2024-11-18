@@ -161,7 +161,7 @@ class Simulator(ABC):
         kinetic_order_matrix : ArrayLike
             The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
         poisson_products_mask : ArrayLike, optional
-            A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
+            [DEVELOPMENT FEATURE] A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
             from a Poisson distribution with mean given by the corresponding element in the stoichiometry matrix. By default None.
         discontinuities : ArrayLike, optional
             An array of time coordinates where the time dependent rate constants are discontinuous. Simulation will smartly avoid
@@ -209,6 +209,7 @@ class Simulator(ABC):
 
     @classmethod
     def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
+        """Build a simulator from a `reactionmodel.Model` object. Additional arguments are passed to the simulator's constructor."""
         return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], jit=jit, **kwargs)
 
     def initiate_run(self, t0, y0, history_length=1e6):
@@ -222,15 +223,16 @@ class Simulator(ABC):
         n_trials : int
             Number of times to run the experiment.
         t_span : ArrayLike
-            A tuple of times `(t0, t_end)` to simulate between.
+            The times `(t0, t_end)` between which to simulate as a tuple.
         rng : List[np.random.Generator]
             Either a single random generator, or a list of random generators with length == n_trials.
         y0 : ArrayLike
             A vector y_i of the quantity of species i at time 0.
         end_routine : Callable, optional
-            Function to call on the result of each experiment to extract the wanted information. Defaults to None.
+            Function with signature Result => Object that is called at the end of each experiment to extract the wanted information.
+            Defaults to None, in which case the full result is returned.
         halt : Callable, optional
-            A function with signature halt(t, y) => bool that stops execution on a return of True.
+            A function with signature halt(t, y) => bool evaulated each step that stops execution on a return of True.
             If None, always simulate to t_end. Defaults to None.
 
         Returns
@@ -266,7 +268,7 @@ class Simulator(ABC):
             A vector of time points at which to evaluate the system and return in the final results.
             If None, evaluate at points chosen by the simulator, by default None.
         halt : Callable, optional
-            A function with signature halt(t, y) => bool that stops execution on a return of True.
+            A function with signature halt(t, y) => bool evaulated each step that stops execution on a return of True.
             If None, always simulate to t_end. Defaults to None.
 
         Returns
