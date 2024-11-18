@@ -9,8 +9,6 @@ readme = "README.md"
 python = ">=3.9,<3.11"
 #numpy = {path = "numpy-1.26.4-cp39-cp39-macosx_11_0_arm64.whl"}
 #scipy = { file = "/Users/thayer/develop/hybrid/scipy-1.13.0.dev0-cp39-cp39-macosx_12_0_arm64.whl" }
-jupyter = "^1.0.0"
-matplotlib = "^3.7.2"
 numba = "^0.58.1"
 reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 
@@ -24,6 +22,8 @@ matlabengine = "^9.14.3"
 optional = true
 
 [tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+matplotlib = "^3.7.2"
 flameprof = "^0.4"
 flameplot = "^1.1.0"
 parameterized = "^0.9.0"
