@@ -168,9 +168,14 @@ class HybridSimulator(Simulator):
             
             In the original Haseltine-Rawlings algorithm, this function compares each propensity to the fixed threshold of `100.0` events per unit time.
             To retrieve this behavior, pass the object `FixedThresholdPartitioner(100.0)`.
+<<<<<<< HEAD
         poisson_products_mask : ArrayLike, optional
             [DEVELOPMENT FEATURE] A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
             from a Poisson distribution with mean given by the corresponding element in the stoichiometry matrix. By default None.
+=======
+        poisson_products_mask:
+            A feature in development that is not fully supported yet.
+>>>>>>> origin/main
         discontinuities : ArrayLike, optional
             A vector of time points that correspond to discontinuities in the function k(t). Providing these points
             will prevent the simulator from integrating over a discontinuity, by default None.
