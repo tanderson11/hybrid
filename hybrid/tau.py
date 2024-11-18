@@ -167,8 +167,6 @@ class TauLeapSimulator(GillespieSimulator):
         self.method = Method(simulator_options.method)
         self.time_handling = TimeHandling(simulator_options.time_handling)
         self.leap_type = TauLeapers(simulator_options.leap_type)
-        if self.leap_type == TauLeapers.gp:
-            print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
         if self.leap_type == TauLeapers.species:
             self.g = self.build_g_function()
 
