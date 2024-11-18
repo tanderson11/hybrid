@@ -4,7 +4,7 @@
 
 For smaller projects:
 1. Clone the repository: `git clone https://github.com/tanderson11/hybrid.git`
-2. Use [Poetry](https://python-poetry.org) to install the package and its dependencies: `poetry install`
+2. Use [Poetry](https://python-poetry.org) to install the package and its dependencies: `poetry install --with dev`
 
 For larger projects:
 1. Use [Poetry](https://python-poetry.org) to create a project:
