@@ -23,7 +23,6 @@ class TimeHandling(Enum):
     inhomogeneous_monotonic_homogeneous_gillespie = 'inhomogeneous_monotonic_homogeneous_gillespie'
 
 class TauLeapers(Enum):
-    gp = 'gp'
     corrected = 'corrected'
     species = 'species'
 
@@ -70,10 +69,96 @@ class TauLeapOptions():
 class TauLeapSimulator(GillespieSimulator):
     run_klass = TauRun
     status_klass = TauStepStatus
-    def __init__(self, k: Union[ArrayLike, Callable], N: ArrayLike, kinetic_order_matrix: ArrayLike, equilibrium_mask: ArrayLike = None, poisson_products_mask: ArrayLike=None, discontinuities: ArrayLike=None, jit: bool=True, propensity_function: Callable=None, species_labels=None, pathway_labels=None, **option_kwargs) -> None:
+    def __init__(self,
+            k: Union[ArrayLike, Callable],
+            N: ArrayLike,
+            kinetic_order_matrix: ArrayLike,
+            equilibrium_mask: ArrayLike = None,
+            poisson_products_mask: ArrayLike=None,
+            discontinuities: ArrayLike=None,
+            jit: bool=True,
+            propensity_function: Callable=None,
+            species_labels=None,
+            pathway_labels=None,
+            leap_type: str = 'species',
+            method: str = 'explicit',
+            time_handling: str = 'homogeneous',
+            epsilon: float=0.01,
+            rejection_multiple: float=10,
+            gillespie_steps_on_rejection: int=100,
+            critical_threshold: int=10,
+            species_creation_is_critical: bool=False,
+            only_reactants_critical: bool=True,
+        ) -> None:
+        """Initialize a simulator equipped to simulate a specific model forward in time with different parameters and initial conditions.
+
+        Parameters
+        ----------
+        k : ArrayLike | Callable
+            Either a vector of unchanging rate constants or a function of time that returns a vector of rate constants.
+        N : ArrayLike
+            The stoichiometry matrix N such that N_ij is the change in species `i` after unit progress in reaction `j`.
+        kinetic_order_matrix : ArrayLike
+            The kinetic order matrix such that the _ij entry is the kinetic intensity of species i in reaction j.
+        equilibrium_mask : ArrayLike, optional:
+            A mask with shape equal to the # of pathways. True denotes a reaction to assume is always in dynamic equilibrium
+            and therefore to ignore while choosing the stepsize in implicit tau leaping.
+        poisson_products_mask : ArrayLike, optional
+            [DEVELOPMENT FEATURE] A mask with shape equal to the # of pathways. True denotes a reaction whose products will be determined by random draws
+            from a Poisson distribution with mean given by the corresponding element in the stoichiometry matrix. By default None.
+        discontinuities : ArrayLike, optional
+            An array of time coordinates where the time dependent rate constants are discontinuous. Simulation will smartly avoid
+            walking over discontinuities and will instead stop at each one. By default None.
+        jit : bool, optional
+            If True, use numba.jit(nopython=True) to construct a low level callable (fast) version of simulation helper functions, by default True.
+        propensity_function : Callable or None, optional
+            If not None, use the specified function a_ij(t,y) to calculate the propensities of reactions at time t and state y.
+            Specify this if there is a fast means of calculating propensities or if propensities do not obey standard kinetic laws, by default None.
+        species_labels : List[str] or None, optional
+            A set of strings that matches the shape of y and provides human readable information detailing the system's species. By default None.
+        pathway_labels : List[str] or None, optional
+            A set of strings that matches the shape of k and provides human readable information detailing the system's reactions. By default None.
+        leap_type : str, optional
+            One of 'species' or 'corrected.' If species, use the approximate leap basd on populations from Cao et al. 2007.
+            If 'corrected', use the exact corrected step from Cao et al. 2006. Defaults to 'species'.
+        method : str, optional
+            One of 'explicit' or 'implicit.' Defaults to 'explicit'.
+        time_handling : str, optional
+            One of 'homogeneous', 'inhomogeneous_monotonic', or 'inhomogeneous_monotonic_homogeneous_gillespie'. If 'homogenous',
+            assume rate constants do not vary in time. If 'inhomogeneous_monotonic_homogeneous_gillespie', assume rate constants
+            monotonically change between each entry in `discontinuities` and bound the changes in propensity taking into account
+            the explicit time dependence. If 'inhomogeneous_monotonic',  also solve the critical process using an inhomogeneous Gillespie step (this can be slow).
+
+            Defaults to 'homogeneous'.
+        epsilon : float, optional
+            A control parameter setting the upper bound on the propensity changes within a leap. Smaller epsilon will result in slower, more exact simulation.
+
+            Defaults to 0.01.
+        rejection_multiple : float, optional
+            If the leap size is within one rejection multiple of the expected time to the next event, switch to making Gillespie steps. This prevents lots of miniscule leaps
+            (which have an overhead compared to a Gillespie step). Defaults to 10.0.
+        gillespie_steps_on_rejection : int, optional
+            How many Gillespie steps to make after a leap is rejected. Defaults to 100.0.
+        critical_threshold : bool, optional
+            If any reactant is within n firings of exhausting, handle that reaction with an exact Gillespie step. Defaults to 10.0. Always safe to set to 1/epsilon.
+        species_creation_is_critical : bool, optional
+            If True, treat a reaction that would produce the first member of a new species as part of the critical process. Defaults to False.
+        only_reactants_critical : bool, optional
+            If True, ignore products when assessing if a reaction is critical. If False, include products. Defaults to True.
+        """
         super().__init__(k, N, kinetic_order_matrix, poisson_products_mask=poisson_products_mask, discontinuities=discontinuities, jit=jit, propensity_function=propensity_function, species_labels=species_labels, pathway_labels=pathway_labels)
         self.N2 = self.N**2
-        simulator_options = TauLeapOptions(**option_kwargs)
+        simulator_options = TauLeapOptions(
+            leap_type=leap_type,
+            method=method,
+            time_handling=time_handling,
+            epsilon=epsilon,
+            rejection_multiple=rejection_multiple,
+            gillespie_steps_on_rejection=gillespie_steps_on_rejection,
+            critical_threshold=critical_threshold,
+            species_creation_is_critical=species_creation_is_critical,
+            only_reactants_critical=only_reactants_critical,
+        )
 
         self.epsilon = simulator_options.epsilon
         self.n_c = simulator_options.critical_threshold
@@ -82,8 +167,6 @@ class TauLeapSimulator(GillespieSimulator):
         self.method = Method(simulator_options.method)
         self.time_handling = TimeHandling(simulator_options.time_handling)
         self.leap_type = TauLeapers(simulator_options.leap_type)
-        if self.leap_type == TauLeapers.gp:
-            print("WARNING: using known bad Gillespie-Petzold leap. Is this a test?")
         if self.leap_type == TauLeapers.species:
             self.g = self.build_g_function()
 

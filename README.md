@@ -12,14 +12,15 @@ For larger projects:
 cd project/
 poetry init
 ```
-2. Install hybrid as a project dependency by adding the following line to your `pyproject.toml` file:
-```yaml
-hybrid = { git = "https://github.com/tanderson11/hybrid.git" }
+2. Install hybrid as a project dependency by adding running the following commands:
+```bash
+poetry add git+https://github.com/tanderson11/hybrid.git
+poetry update
 ```
 
 ## Explanation
 
-For a simple interactive tutorial in a notebook, visit [Tutorial.ipynb](notebooks/Tutorial.ipynb).
+For a simple interactive tutorial based on the SIR model in infectious disease epidemiology, visit [Tutorial.ipynb](notebooks/Tutorial.ipynb).
 
 This package implements [tau-leaping](https://doi.org/10.1063/1.2745299) (originally described by Gillespie, *The Journal of Chemical Physics*, 2001) and [partioned-based forward simulation](https://pubs.aip.org/aip/jcp/article-abstract/117/15/6959/447100/Approximate-simulation-of-coupled-fast-and-slow) (Haseltine and Rawlings, *The Journal of Chemical Physics* in 2002).
 
@@ -256,3 +257,14 @@ def simulate(t_span: ArrayLike, y0: ArrayLike, k: Callable[[float], ArrayLike], 
             A counter object that records all the status of the simulator at the end of each simulation step.
     """
 ```
+
+## MIDAS talk
+
+This package was presented at MIDAS 2024. The slides are available in `midas2024.pptx`. Here is an index of which notebooks were used to generate which figures:
+
+1. SIR curves: [VirusDynamics.ipynb](notebooks/VirusDynamics.ipynb)
+2. Interventions: [HillTimeDependence.ipynb](tests/HillTimeDependence.ipynb) and [LinearTimeDependence.ipynb](tests/LinearTimeDependence.ipynb)
+3. Mutant emergence curves: [VirusDynamics.ipynb](notebooks/VirusDynamics.ipynb)
+4. Schögl system realizations: [Schlogl.ipynb](tests/hybrid/Schlogl.ipynb)
+5. Biased conventional rounding: [PartitionClinging.ipynb](tests/PartitionClinging.ipynb)
+6. Decaying isomerization problem: [DecayingIsomerization.ipynb](tests/hybrid/DecayingIsomerization.ipynb)
