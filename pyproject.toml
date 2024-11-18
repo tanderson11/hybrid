@@ -14,8 +14,14 @@ matplotlib = "^3.7.2"
 numba = "^0.58.1"
 reactionmodel = { git = "https://github.com/tanderson11/reactionmodel.git" }
 
+[tool.poetry.group.extras]
+optional = true
+
 [tool.poetry.group.extras.dependencies]
 matlabengine = "^9.14.3"
+
+[tool.poetry.group.dev]
+optional = true
 
 [tool.poetry.group.dev.dependencies]
 flameprof = "^0.4"
