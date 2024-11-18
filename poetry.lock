@@ -1055,7 +1055,7 @@ test = ["flaky", "ipyparallel", "pre-commit", "pytest (>=7.0)", "pytest-asyncio 
 name = "ipympl"
 version = "0.9.4"
 description = "Matplotlib Jupyter Extension"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.9"
 files = [
@@ -1117,7 +1117,7 @@ test-extra = ["curio", "matplotlib (!=3.2.0)", "nbformat", "numpy (>=1.22)", "pa
 name = "ipython-genutils"
 version = "0.2.0"
 description = "Vestigial utilities from IPython"
-category = "dev"
+category = "main"
 optional = false
 python-versions = "*"
 files = [
@@ -2299,7 +2299,7 @@ testing = ["docopt", "pytest"]
 name = "pathlib"
 version = "1.0.1"
 description = "Object-oriented filesystem paths"
-category = "main"
+category = "dev"
 optional = false
 python-versions = "*"
 files = [
@@ -2311,7 +2311,7 @@ files = [
 name = "patsy"
 version = "1.0.1"
 description = "A Python package for describing statistical models and for building design matrices."
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.6"
 files = [
@@ -2886,7 +2886,7 @@ cffi = {version = "*", markers = "implementation_name == \"pypy\""}
 name = "reactionmodel"
 version = "0.1.0"
 description = "A package for defining a set of reactions which convert reactants to products and easily simulating them deterministically or stochastically."
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.9,<3.11"
 files = []
@@ -3248,7 +3248,7 @@ type = ["importlib-metadata (>=7.0.2)", "jaraco.develop (>=7.21)", "mypy (>=1.12
 name = "simpleeval"
 version = "0.9.13"
 description = "A simple, safe single expression evaluator library."
-category = "dev"
+category = "main"
 optional = false
 python-versions = "*"
 files = [
@@ -3316,7 +3316,7 @@ tests = ["cython", "littleutils", "pygments", "pytest", "typeguard"]
 name = "statsmodels"
 version = "0.14.4"
 description = "Statistical computations and models for Python"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.9"
 files = [
@@ -3688,4 +3688,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.11"
-content-hash = "2767bd6976184f07f11a592a0134d9dc247d13241e7f94b42e2abe7c94e3a036"
+content-hash = "77d21bb46c3e44b25ad768a1acf81aeb7316740cafe0bb73da38729938c215a2"

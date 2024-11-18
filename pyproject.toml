@@ -27,8 +27,6 @@ ipdb = "^0.13.13"
 statsmodels = "^0.14.1"
 pathlib = "^1.0.1"
 
-
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
