@@ -10,7 +10,7 @@ For larger projects:
 1. Use [Poetry](https://python-poetry.org) to create a project:
 ```bash
 cd project/
-poetry init
+poetry init --python ">=3.9,<3.11"
 ```
 2. Install hybrid as a project dependency by adding running the following commands:
 ```bash
