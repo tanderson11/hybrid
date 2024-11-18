@@ -1,23 +1,59 @@
-# Hybrid stochastic-deterministic simulation for chemical and biological processes
+# Multi-scale simulation for chemical and biological processes
 
 ## Installation
 
+For smaller projects:
 1. Clone the repository: `git clone https://github.com/tanderson11/hybrid.git`
 2. Use [Poetry](https://python-poetry.org) to install the package and its dependencies: `poetry install`
 
+For larger projects:
+1. Use [Poetry](https://python-poetry.org) to create a project:
+```bash
+cd project/
+poetry init
+```
+2. Install hybrid as a project dependency by adding the following line to your `pyproject.toml` file:
+```yaml
+hybrid = { git = "https://github.com/tanderson11/hybrid.git" }
+```
+
 ## Explanation
 
-This package uses a combination of numerical integration and a stochastic simulation algorithm to simulate a group of reactions corresponding to biological/chemical system given an initial state. Primarily, this package implements the [Haseltine-Rawlings forward simulation](https://pubs.aip.org/aip/jcp/article-abstract/117/15/6959/447100/Approximate-simulation-of-coupled-fast-and-slow) algorithm described in *The Journal of Chemical Physics* in 2002. Although there a few updates to their approach to reflect the advances of the field (for example: random rather deterministic rounding). For more details see the [Technical Details](#technical-details) section.
+For a simple interactive tutorial in a notebook, visit [Tutorial.ipynb](notebooks/Tutorial.ipynb).
 
-For any system, the reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species `i` after unit progress in reaction `j`), and `V` the kinetic order matrix (`V_ij` = kinetic intensity (exponent) for species `i` in reaction `j`). The rate constants are defined by the vector `k`, the `j`th entry of which is the rate constant of reaction `j`.
+This package implements [tau-leaping](https://doi.org/10.1063/1.2745299) (originally described by Gillespie, *The Journal of Chemical Physics*, 2001) and [partioned-based forward simulation](https://pubs.aip.org/aip/jcp/article-abstract/117/15/6959/447100/Approximate-simulation-of-coupled-fast-and-slow) (Haseltine and Rawlings, *The Journal of Chemical Physics* in 2002).
+
+For any system, the reaction pathways are defined by two unchanging matrices: `N`, the stoichiometry matrix (`N_ij` = net change in species `i` after unit progress in reaction `j`), and `O` the kinetic order matrix (`O_ij` = kinetic intensity (exponent) for species `i` in reaction `j`). The rate constants are defined by the vector `k`, the `j`th entry of which is the rate constant of reaction `j`.
 Explicit time dependence is possible by specifying `k` as a function of time `t`.
 
-## Usage
+## Simulators
+
+This module supports three different methods of simulation: Gillespie simulation, tau-leaping, and Haseltine-Rawlings hybrid simulation. To access the simulator you want, import them from the appropriate module:
+
+1. `from hybrid.hybrid import HybridSimulator`
+2. `from hybrid.tau import TauLeapSimulator`
+3. `from hybrid.gillespie import GillespieSimulator`
 
 The recommended pattern for using this package is:
 1. Import your desired simulator: `from hybrid.hybrid import HybridSimulator as Simulator` or `from hybrid.gillespie import GillespieSimulator as Simulator`.
-2. Initialize with simulator by specifying your system: `simulator = Simulator(*args)`
-3. Simulate `simulator.simulate(*args)`.
+2. Initialize with simulator by specifying your system:
+```python
+# given k rate constant vector, N stoichiometry matrix, and O kinetic order matrix
+simulator = GillespieSimulator(
+    k=k,
+    N=N,
+    kinetic_order=O,
+)
+```
+3. Simulate
+```python
+# given t_span, the window between which to simulate, and y0 the initial condition
+simulator.simulate(
+    t_span=t_span,
+    y0=y0,
+    rng=np.random.default_rng()
+)
+```
 
 To see the kinds of arguments involved, let's consider two examples.
 
@@ -220,5 +256,3 @@ def simulate(t_span: ArrayLike, y0: ArrayLike, k: Callable[[float], ArrayLike], 
             A counter object that records all the status of the simulator at the end of each simulation step.
     """
 ```
-
-## Technical details

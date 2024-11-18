@@ -4,3 +4,5 @@ __pycache__/
 
 tests/test_output
 *.whl
+*.tar.gz
+*.png
