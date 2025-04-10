@@ -3,9 +3,10 @@ from typing import Callable, Union
 from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike
-from numba import jit as numbajit
 from scipy.integrate import quad
-from scipy.optimize import fsolve, least_squares
+from scipy.optimize import least_squares
+
+from reactionmodel.propensity import construct_propensity_function
 
 from .simulator import Step, StepStatus, Simulator
 
@@ -40,7 +41,18 @@ class GillespieSimulator(Simulator):
     @classmethod
     def from_model(cls, m, *args, reaction_to_k=None, parameters=None, jit: bool=True, **kwargs):
         reaction_index_to_hooks = m.get_hooks(parameters=parameters) if m.has_hooks else None
-        return cls(m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit), m.stoichiometry(), m.kinetic_order(), *args, species_labels=[s.name for s in m.species], pathway_labels=[r.description for r in m.all_reactions], reaction_index_to_hooks=reaction_index_to_hooks, jit=jit, **kwargs)
+        simulator = cls(
+            m.get_k(reaction_to_k=reaction_to_k, parameters=parameters, jit=jit),
+            m.stoichiometry(),
+            m.kinetic_order(),
+            *args,
+            species_labels=[s.name for s in m.species],
+            pathway_labels=[r.description for r in m.all_reactions],
+            reaction_index_to_hooks=reaction_index_to_hooks,
+            jit=jit,
+            **kwargs
+        )
+        return simulator
 
     def step(self, t, y, t_end, rng, t_eval):
         if self.inhomogeneous:
@@ -50,35 +62,9 @@ class GillespieSimulator(Simulator):
 
     @classmethod
     def construct_propensity_function(cls, k, kinetic_order_matrix, inhomogeneous, jit=True):
-        assert jit
-        @numbajit(nopython=True)
-        def jit_calculate_propensities(t, y):
-            # Remember, we want total number of distinct combinations * k === rate.
-            # we want to calculate (y_i kinetic_order_ij) (binomial coefficient)
-            # for each species i and each reaction j
-            # sadly, inside a numba C function, we can't avail ourselves of scipy's binom,
-            # so we write this little calculator ourselves
-            intensity_power = np.zeros_like(kinetic_order_matrix)
-            for i in range(0, kinetic_order_matrix.shape[0]):
-                for j in range(0, kinetic_order_matrix.shape[1]):
-                    if y[i] < kinetic_order_matrix[i][j]:
-                        intensity_power[i][j] = 0.0
-                    elif y[i] == kinetic_order_matrix[i][j]:
-                        intensity_power[i][j] = 1.0
-                    else:
-                        intensity = 1.0
-                        for x in range(0, kinetic_order_matrix[i][j]):
-                            intensity *= (y[i] - x) / (x+1)
-                        intensity_power[i][j] = intensity
-            if inhomogeneous:
-                k_of_t = k(t)
-            else:
-                k_of_t = k
-            product_down_columns = np.ones(len(k_of_t))
-            for i in range(0, len(y)):
-                product_down_columns = product_down_columns * intensity_power[i]
-            return product_down_columns * k_of_t
-        return jit_calculate_propensities
+        #assert jit
+        #print(jit)
+        return construct_propensity_function(k, kinetic_order_matrix, jit=jit)
 
     @classmethod
     def find_hitting_time_inhomogenous(cls, t, t_end, y, propensity_function, rng):
